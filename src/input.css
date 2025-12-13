@@ -1237,9 +1237,10 @@ body.selection-mode .message-bubble {
 
 .char-counter {
   position: absolute;
-  right: 80px;
-  bottom: 50%;
-  transform: translateY(50%);
+  /* Positioned inside the textarea container (see index.html wrapper) */
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   font-size: 0.7rem;
   color: var(--text-muted);
   font-weight: 500;

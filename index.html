@@ -248,24 +248,27 @@
   aria-label="Post a confession"
 >
   <label for="confessionInput" class="sr-only">Type your confession</label>
-  <textarea
-    id="confessionInput"
-    rows="1"
-    class="flex-1 resize-none focus:outline-none text-sm pr-16"
-    placeholder="Type your confession..."
-    required
-    maxlength="2000"
-    autocomplete="off"
-    spellcheck="true"
-  ></textarea>
-  
-  <!-- Character Counter -->
-  <span 
-    id="confessionCharCount" 
-    class="char-counter"
-    aria-live="polite"
-    aria-label="Character count"
-  >0/2000</span>
+
+  <div class="relative flex-1">
+    <textarea
+      id="confessionInput"
+      rows="1"
+      class="w-full resize-none focus:outline-none text-sm pr-16"
+      placeholder="Type your confession..."
+      required
+      maxlength="2000"
+      autocomplete="off"
+      spellcheck="true"
+    ></textarea>
+
+    <!-- Character Counter -->
+    <span 
+      id="confessionCharCount" 
+      class="char-counter"
+      aria-live="polite"
+      aria-label="Character count"
+    >0/2000</span>
+  </div>
   
   <button
     id="confessionButton"
@@ -283,24 +286,27 @@
       aria-label="Send a message"
 >
       <label for="chatInput" class="sr-only">Type a message</label>
-      <textarea
-      id="chatInput"
-      rows="1"
-      class="flex-1 resize-none focus:outline-none text-sm pr-16"
-      placeholder="Type a message..."
-      required
-      maxlength="2000"
-      autocomplete="off"
-      spellcheck="true"
-      ></textarea>
-  
-    <!-- Character Counter -->
-    <span 
-     id="chatCharCount" 
-     class="char-counter"
-     aria-live="polite"
-     aria-label="Character count"
-    >0/2000</span>
+
+      <div class="relative flex-1">
+        <textarea
+        id="chatInput"
+        rows="1"
+        class="w-full resize-none focus:outline-none text-sm pr-16"
+        placeholder="Type a message..."
+        required
+        maxlength="2000"
+        autocomplete="off"
+        spellcheck="true"
+        ></textarea>
+
+        <!-- Character Counter -->
+        <span 
+         id="chatCharCount" 
+         class="char-counter"
+         aria-live="polite"
+         aria-label="Character count"
+        >0/2000</span>
+      </div>
   
   <button
     id="chatButton"
