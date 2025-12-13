@@ -996,7 +996,7 @@ body.selection-mode .message-bubble {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
   transition: all 0.3s var(--ease-out-expo);
-  /*max-width: 90vw;*/
+  /* max-width: 90vw; */
   max-height: 90vh;
   overflow: auto;
 }
@@ -1201,4 +1201,41 @@ body.selection-mode .message-bubble {
   :root {
     color-scheme: dark;
   }
+}
+
+header {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 50;
+}
+
+/* Force Forms (Input Box) to stick to bottom */
+#chatForm, #confessionForm {
+  position: fixed !important;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 50;
+  margin: 0;
+  border-top: 1px solid var(--border-color); /* Ensure border is visible */
+}
+
+/* Adjust Feed Container to fit between Header and Input */
+#feedContainer {
+  padding-top: 70px !important;    /* Clear the Header */
+  padding-bottom: 90px !important; /* Clear the Input Box */
+  height: 100vh;                   /* Use full viewport height */
+  height: 100dvh;                  /* Dynamic viewport height for mobile */
+}
+
+/* Move the "Scroll to Bottom" button up so it doesn't overlap input */
+#scrollToBottomBtn {
+  bottom: 100px !important;
+}
+
+/* Ensure main wrapper doesn't double-scroll */
+main {
+  overflow: hidden !important;
 }
