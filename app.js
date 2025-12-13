@@ -107,7 +107,7 @@ function isValidUsername(username) {
 function isValidMessageText(text) {
   if (typeof text !== 'string') return false;
   const trimmed = text.trim();
-  if (trimmed.length === 0 || trimmed.length > 2000) return false;
+  if (trimmed.length === 0 || trimmed.length > MESSAGE_MAX_LENGTH) return false;
   
   // Check for null bytes and control characters
   const controlCharRegex = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
@@ -510,7 +510,7 @@ const USER_COLORS = Object.freeze([
   "#0984e3", "#00b894"
 ]);
 
-const MESSAGE_MAX_LENGTH = 2000;
+const MESSAGE_MAX_LENGTH = 500;
 const USERNAME_MAX_LENGTH = 30;
 const TYPING_TIMEOUT = 3000;
 const RATE_LIMIT_MS = 2000;
@@ -654,10 +654,10 @@ function updateCharacterCounter(input, counter) {
   if (currentLength >= maxLength) {
     counter.classList.add('limit');
   } else if (currentLength >= maxLength * 0.95) {
-    // 95%+ = danger (1900+ chars)
+    // 95%+ = danger
     counter.classList.add('danger');
   } else if (currentLength >= maxLength * 0.8) {
-    // 80%+ = warning (1600+ chars)
+    // 80%+ = warning
     counter.classList.add('warning');
   }
 }
@@ -1574,7 +1574,7 @@ async function saveEdit() {
   const newText = modalEditTextArea.value.trim();
   
   if (!isValidMessageText(newText)) {
-    showToast("Message must be 1-2000 characters.", "error");
+    showToast(`Message must be 1-${MESSAGE_MAX_LENGTH} characters.`, "error");
     return;
   }
   

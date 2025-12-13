@@ -44,7 +44,7 @@ service cloud.firestore {
       let text = request.resource.data.text;
       return text is string
              && text.size() > 0
-             && text.size() <= 2000
+             && text.size() <= 500
              && !text.matches('.*[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F].*');
     }
 
@@ -219,7 +219,7 @@ service cloud.firestore {
              // Text validation
              && data.text is string
              && data.text.size() > 0
-             && data.text.size() <= 2000
+             && data.text.size() <= 500
              && !data.text.matches('.*[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F].*')
              // Edit flag must be true
              && data.edited == true;

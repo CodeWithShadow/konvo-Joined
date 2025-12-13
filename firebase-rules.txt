@@ -51,7 +51,7 @@ service cloud.firestore {
       let text = request.resource.data.text;
       return text is string
              && text.size() > 0
-             && text.size() <= 2000
+             && text.size() <= 500
              // Prevent null bytes and control characters abuse
              && !text.matches('.*[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F].*');
     }
@@ -215,7 +215,7 @@ service cloud.firestore {
              // Validate new text
              && data.text is string
              && data.text.size() > 0
-             && data.text.size() <= 2000
+             && data.text.size() <= 500
              // edited flag must be true
              && data.edited == true;
     }
@@ -230,7 +230,7 @@ service cloud.firestore {
              && data.originalId.size() <= 100
              && data.collection in ['chat', 'confessions']
              && data.text is string
-             && data.text.size() <= 2000
+             && data.text.size() <= 500
              && data.pinnedBy == request.auth.uid
              && data.timestamp == request.time;
     }
