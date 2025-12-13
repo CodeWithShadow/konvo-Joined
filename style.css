@@ -708,7 +708,7 @@ body.selection-mode .message-bubble {
 
 #scrollToBottomBtn {
   position: absolute;
-  bottom: 80px;
+  bottom: 100px; /* Increased to clear the fixed input bar */
   left: 50%;
   transform: translateX(-50%);
   background-color: var(--surface);

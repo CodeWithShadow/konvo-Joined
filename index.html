@@ -36,8 +36,8 @@
   <body class="flex flex-col bg-[#0a0a0a] h-screen" style="height: 100dvh; height: 100svh;">
     <!-- Header -->
     <header
-      class="flex justify-between items-center px-3 py-3 border-b border-[#333333] bg-[#0a0a0a] gap-2 z-10 h-14"
-    >
+  class="fixed top-0 w-full z-50 flex justify-between items-center px-3 py-3 border-b border-[#333333] bg-[#0a0a0a] gap-2 h-14"
+>
       <h1 class="text-base sm:text-2xl font-bold text-white tracking-tight shrink-0">
         KONVO
       </h1>
@@ -123,7 +123,7 @@
     </header>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col overflow-hidden relative">
+    <main class="flex-1 flex flex-col overflow-hidden relative pt-14 pb-20">
       <!-- Pinned Message Bar -->
       <div 
         id="pinnedMessageBar" 
@@ -235,10 +235,10 @@
 
       <!-- Confession Form -->
       <form 
-        id="confessionForm" 
-        class="hidden gap-3 border-t border-[#333]"
-        aria-label="Post a confession"
-      >
+  id="confessionForm" 
+  class="hidden gap-3 border-t border-[#333] fixed bottom-0 w-full z-50 bg-[#0a0a0a]"
+  aria-label="Post a confession"
+>
         <label for="confessionInput" class="sr-only">Type your confession</label>
         <textarea
           id="confessionInput"
@@ -261,10 +261,10 @@
 
       <!-- Chat Form -->
       <form 
-        id="chatForm" 
-        class="flex gap-3 border-t border-[#333]"
-        aria-label="Send a message"
-      >
+  id="chatForm" 
+  class="flex gap-3 border-t border-[#333] fixed bottom-0 w-full z-50 bg-[#0a0a0a]"
+  aria-label="Send a message"
+>
         <label for="chatInput" class="sr-only">Type a message</label>
         <textarea
           id="chatInput"
