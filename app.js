@@ -2361,7 +2361,9 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
 
     // Create bubble
     const bubble = document.createElement("div");
-    bubble.className = `message-bubble rounded-lg max-w-xs sm:max-w-md md:max-w-lg ${isMine ? "my-message" : ""} ${isConsecutive ? "mt-0.5" : "mt-2"}`;
+    // NOTE: Top spacing is applied to the wrapper so the kebab button (positioned relative to wrapper)
+    // aligns with the bubble's top edge on mobile.
+    bubble.className = `message-bubble rounded-lg max-w-xs sm:max-w-md md:max-w-lg ${isMine ? "my-message" : ""}`;
     
     // Pinned styling
     if (data.isPinned) {
@@ -2604,7 +2606,7 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
 
     // Bubble wrapper for positioning kebab outside
     const bubbleWrapper = document.createElement("div");
-    bubbleWrapper.className = `bubble-wrapper ${isMine ? "my-bubble-wrapper" : ""}`;
+    bubbleWrapper.className = `bubble-wrapper ${isMine ? "my-bubble-wrapper" : ""} ${isConsecutive ? "mt-0.5" : "mt-2"}`;
     bubbleWrapper.appendChild(kebabBtn);
     bubbleWrapper.appendChild(bubble);
 
