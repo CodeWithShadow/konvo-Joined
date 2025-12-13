@@ -996,7 +996,7 @@ body.selection-mode .message-bubble {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
   transition: all 0.3s var(--ease-out-expo);
-  max-width: 90vw;
+  /*max-width: 90vw;*/
   max-height: 90vh;
   overflow: auto;
 }
