@@ -2,7 +2,7 @@
 // Version: 2.0 (Security Hardened)
 'use strict';
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `konvo-cache-${CACHE_VERSION}`; // ✅ Backticks
 
 // Files to cache (static assets only)
@@ -10,6 +10,7 @@ const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/dist/style.css',
+  '/favicon.svg',
   '/icon.jpg',
   '/app.js'
 ];
