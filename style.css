@@ -1203,43 +1203,6 @@ body.selection-mode .message-bubble {
   }
 }
 
-header {
-  position: fixed !important;
-  top: 0;
-  left: 0;
-  width: 100%;
-  z-index: 50;
-}
-
-/* Force Forms (Input Box) to stick to bottom */
-#chatForm, #confessionForm {
-  position: fixed !important;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  z-index: 50;
-  margin: 0;
-  border-top: 1px solid var(--border-color); /* Ensure border is visible */
-}
-
-/* Adjust Feed Container to fit between Header and Input */
-#feedContainer {
-  padding-top: 70px !important;    /* Clear the Header */
-  padding-bottom: 90px !important; /* Clear the Input Box */
-  height: 100vh;                   /* Use full viewport height */
-  height: 100dvh;                  /* Dynamic viewport height for mobile */
-}
-
-/* Move the "Scroll to Bottom" button up so it doesn't overlap input */
-#scrollToBottomBtn {
-  bottom: 100px !important;
-}
-
-/* Ensure main wrapper doesn't double-scroll */
-main {
-  overflow: hidden !important;
-}
-
 /* =========================================
    FORCE MOBILE LAYOUT (Copy to bottom of file)
    ========================================= */
