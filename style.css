@@ -1204,64 +1204,69 @@ body.selection-mode .message-bubble {
 }
 
 /* =========================================
-   FORCE MOBILE LAYOUT (Copy to bottom of file)
+   STRICT MOBILE LAYOUT FIX (Add to bottom)
    ========================================= */
 
-/* 1. Lock the body so the whole page CANNOT scroll */
+/* 1. LOCK THE PAGE (Crucial) */
 html, body {
-  height: 100dvh !important; /* Force exact screen height */
+  height: 100dvh !important;       /* Strict height, no growing */
+  max-height: 100dvh !important;
   width: 100vw !important;
-  overflow: hidden !important; /* Disable page scrolling */
-  position: fixed !important; /* Lock position */
-  inset: 0 !important;
+  overflow: hidden !important;     /* Disable body scroll */
   margin: 0 !important;
-  padding: 0 !important;
+  position: fixed;                 /* Prevents iOS bounce/scroll */
+  inset: 0;
 }
 
-/* 2. Make the main container fill the space */
+/* 2. MAIN CONTAINER SETUP */
+/* Ensure the flex container fills exactly the screen height */
+body {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* 3. HEADER & FOOTER LOCK */
+/* Stop them from shrinking or scrolling away */
+header, 
+#chatForm, 
+#confessionForm {
+  flex-shrink: 0 !important;       /* Never shrink */
+  position: relative !important;   /* Use Flexbox placement, not absolute */
+  z-index: 50;
+}
+
+/* 4. MAIN CONTENT AREA */
 main {
-  height: 100% !important;
-  width: 100% !important;
-  overflow: hidden !important;
-  position: relative !important;
+  flex: 1 1 auto !important;       /* Grow to fill space */
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;     /* Container itself shouldn't scroll */
+  height: auto !important;
+  min-height: 0 !important;        /* CRITICAL: Allows flex child to scroll */
+  padding: 0 !important;           /* Remove old padding fixes */
 }
 
-/* 3. Force Header to stick to top */
-header {
-  position: absolute !important;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 60px; /* Fixed height */
-  z-index: 50;
-  background-color: var(--bg-color); /* Ensure no transparency */
-}
-
-/* 4. Force Input Forms to stick to bottom */
-#chatForm, #confessionForm {
-  position: absolute !important;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  z-index: 50;
-  background-color: #0a0a0a; /* Match bg color */
-  padding-bottom: env(safe-area-inset-bottom); /* Handle iPhone notches */
-}
-
-/* 5. Make the Feed scroll internally */
+/* 5. SCROLLABLE FEED */
 #feedContainer {
-  height: 100% !important;
-  overflow-y: auto !important;
-  -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
+  flex: 1 1 auto !important;       /* Take all remaining space */
+  overflow-y: auto !important;     /* Enable internal scroll */
+  height: auto !important;
+  min-height: 0 !important;        /* CRITICAL: Allows scrolling inside flex */
   
-  /* Add padding so messages aren't hidden behind header/input */
-  padding-top: 70px !important; 
-  padding-bottom: 90px !important; 
+  /* Reset padding to look good */
+  padding-top: 1rem !important;    
+  padding-bottom: 1rem !important;
+  
+  /* Smooth scrolling */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
-/* 6. Adjust scroll button position */
+/* 6. Clean up the scroll button */
 #scrollToBottomBtn {
-  bottom: 100px !important; /* Above the input box */
-} 
-
-/* 2*?
+  position: absolute;
+  bottom: 80px; /* Position relative to the main container, above input */
+  right: 20px;
+  left: auto;
+  transform: none;
+}
