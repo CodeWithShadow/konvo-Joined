@@ -5,11 +5,11 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build:css": "npx tailwindcss -i ./src/input.css -o ./dist/style.css --minify",
-    "watch:css": "npx tailwindcss -i ./src/input.css -o ./dist/style.css --watch",
-    "build": "npm run build:css",
-    "dev": "npm run watch:css"
-  },
+  "build:css": "npx tailwindcss -i ./src/input.css -o ./dist/style.css --minify",
+  "watch:css": "npx tailwindcss -i ./src/input.css -o ./dist/style.css --watch",
+  "build": "npm run build:css",
+  "dev": "npm run watch:css"
+},
   "devDependencies": {
     "autoprefixer": "^10.4.22",
     "cssnano": "^6.1.2",
