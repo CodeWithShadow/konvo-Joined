@@ -3,38 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    
-    <!-- Security Meta Tags -->
-    <meta name="referrer" content="strict-origin-when-cross-origin" />
-    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
-    
     <title>Konvo // Anonymous Chat</title>
-    
-    <!-- Favicon -->
     <link rel="icon" type="image/jpeg" href="icon.jpg" />
-    
-    <!-- Preconnect for Performance -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
-    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Google Fonts -->
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    
-    <!-- Local Stylesheet -->
     <link rel="stylesheet" href="style.css" />
   </head>
 
   <body class="flex flex-col bg-[#0a0a0a]" style="height: 100dvh">
-    <!-- Header -->
     <header
       class="flex justify-between items-center px-3 py-3 border-b border-[#333333] bg-[#0a0a0a] gap-2 z-10 h-14"
     >
@@ -44,62 +25,31 @@
       
       <div class="flex items-center gap-2 overflow-hidden flex-1 justify-end">
         <nav class="flex text-[10px] sm:text-base font-medium gap-1 sm:gap-4 shrink">
-          <div 
-            id="navConfessions" 
-            class="nav-item px-2 py-1 truncate"
-            role="button"
-            tabindex="0"
-            aria-label="View Confessions"
-          >
-            CONFESSIONS
-          </div>
-          <div 
-            id="navChat" 
-            class="nav-item active px-2 py-1"
-            role="button"
-            tabindex="0"
-            aria-label="View Chat"
-          >
-            CHAT
-          </div>
+          <div id="navConfessions" class="nav-item px-2 py-1 truncate">CONFESSIONS</div>
+          <div id="navChat" class="nav-item active px-2 py-1">CHAT</div>
         </nav>
 
         <div class="flex items-center gap-1 sm:gap-2 shrink-0">
-          <!-- Notification Button -->
           <button
             id="notificationButton"
             type="button"
-            class="p-2 rounded-full hover:bg-[#262626] transition text-[#ededed] flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            class="p-2 rounded-full hover:bg-[#262626] transition text-[#ededed] flex items-center justify-center focus:outline-none outline-none"
             title="Toggle Notifications"
-            aria-label="Toggle Notifications"
           >
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              width="18" 
-              height="18" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              stroke-width="2" 
-              stroke-linecap="round" 
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              <path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path>
-              <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path>
-              <path d="M18 8a6 6 0 0 0-9.33-5"></path>
-              <line x1="1" y1="1" x2="23" y2="23"></line>
+             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                <path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path>
+                <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path>
+                <path d="M18 8a6 6 0 0 0-9.33-5"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
             </svg>
           </button>
 
-          <!-- Profile Button -->
           <button
             id="profileButton"
             type="button"
-            class="p-2 rounded-full hover:bg-[#262626] transition text-[#ededed] flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            class="p-2 rounded-full hover:bg-[#262626] transition text-[#ededed] flex items-center justify-center focus:outline-none"
             title="Edit Profile"
-            aria-label="Edit Profile"
           >
             <svg
               width="18"
@@ -108,7 +58,6 @@
               stroke="currentColor"
               viewBox="0 0 24 24"
               xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
             >
               <path
                 stroke-linecap="round"
@@ -122,45 +71,26 @@
       </div>
     </header>
 
-    <!-- Main Content -->
     <main class="flex-1 flex flex-col overflow-hidden relative">
-      <!-- Pinned Message Bar -->
-      <div 
-        id="pinnedMessageBar" 
-        class="hidden flex items-center gap-3 px-4 py-2 bg-[#1c1c1c] border-b border-[#333] z-20 shadow-lg cursor-pointer hover:bg-[#262626] transition-colors shrink-0"
-        role="button"
-        tabindex="0"
-        aria-label="View pinned message"
-      >
-        <span class="text-lg shrink-0" aria-hidden="true">📌</span>
-        <div class="flex flex-col overflow-hidden">
-          <span class="text-[10px] text-[#fbbf24] font-bold uppercase tracking-wider">Pinned Message</span>
-          <p id="pinnedMessageText" class="text-sm text-white truncate"></p>
-        </div>
+      <div id="pinnedMessageBar" class="hidden flex items-center gap-3 px-4 py-2 bg-[#1c1c1c] border-b border-[#333] z-20 shadow-lg cursor-pointer hover:bg-[#262626] transition-colors shrink-0">
+          <span class="text-lg shrink-0">📌</span>
+          <div class="flex flex-col overflow-hidden">
+              <span class="text-[10px] text-[#fbbf24] font-bold uppercase tracking-wider">Pinned Message</span>
+              <p id="pinnedMessageText" class="text-sm text-white truncate"></p>
+          </div>
       </div>
 
-      <!-- Feed Container -->
       <div
         id="feedContainer"
         class="flex-1 flex flex-col p-2 sm:p-4 gap-2 overflow-y-auto"
-        role="log"
-        aria-live="polite"
-        aria-label="Messages"
       >
         <div id="loading" class="text-center p-4 text-[#888888] text-sm">
           CONNECTING...
         </div>
       </div>
 
-      <!-- Scroll to Bottom Button -->
-      <button 
-        id="scrollToBottomBtn" 
-        class="hidden"
-        type="button"
-        aria-label="Scroll to bottom"
-        title="Scroll to latest messages"
-      >
-        <span id="newMsgCount" class="hidden" aria-live="polite">0</span>
+      <button id="scrollToBottomBtn" class="hidden">
+        <span id="newMsgCount" class="hidden">0</span>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="20"
@@ -171,165 +101,108 @@
           stroke-width="2"
           stroke-linecap="round"
           stroke-linejoin="round"
-          aria-hidden="true"
         >
           <path d="M7 13l5 5 5-5M7 6l5 5 5-5" />
         </svg>
       </button>
 
-      <!-- Selection Bar -->
       <div
         id="selectionBar"
         class="hidden flex justify-between items-center bg-[#1c1c1c] border-t border-[#333] p-3"
-        role="toolbar"
-        aria-label="Message selection actions"
       >
-        <span id="selectionCount" class="text-base text-white font-medium" aria-live="polite">
-          0 selected
-        </span>
+        <span id="selectionCount" class="text-base text-white font-medium"
+          >0 selected</span
+        >
         <div class="flex gap-4">
           <button
             id="selectionCancel"
-            type="button"
-            class="text-sm font-medium text-[#888888] hover:text-white transition"
-            aria-label="Cancel selection"
+            class="text-sm font-medium text-[#888888] hover:text-white"
           >
             CANCEL
           </button>
           <button
             id="selectionDelete"
-            type="button"
-            class="text-sm font-bold text-red-500 hover:text-red-400 transition"
-            aria-label="Delete selected messages"
+            class="text-sm font-bold text-red-500 hover:text-red-400"
           >
             DELETE
           </button>
         </div>
       </div>
 
-      <!-- Reply Bar -->
-      <div id="replyBar" role="status" aria-label="Replying to message">
+      <div id="replyBar">
         <div class="reply-info">
           <div class="reply-author" id="replyAuthor"></div>
           <div class="reply-text" id="replyText"></div>
         </div>
-        <button 
-          id="cancelReply" 
-          type="button"
-          title="Cancel reply"
-          aria-label="Cancel reply"
-        >
-          ✕
-        </button>
+        <button id="cancelReply" title="Cancel reply">✕</button>
       </div>
 
-      <!-- Typing Indicator -->
-      <div 
-        id="typingIndicator" 
-        class="px-4 h-6 text-xs text-[#888]"
-        aria-live="polite"
-        aria-atomic="true"
-      >
+      <div id="typingIndicator" class="px-4 h-6 text-xs text-[#888]">
         &nbsp;
       </div>
 
-      <!-- Confession Form -->
-      <form 
-        id="confessionForm" 
-        class="hidden gap-3 border-t border-[#333]"
-        aria-label="Post a confession"
-      >
-        <label for="confessionInput" class="sr-only">Type your confession</label>
+      <form id="confessionForm" class="hidden gap-3 border-t border-[#333]">
         <textarea
           id="confessionInput"
           rows="1"
           class="flex-1 resize-none focus:outline-none text-sm"
           placeholder="Type your confession..."
           required
-          maxlength="2000"
-          autocomplete="off"
-          spellcheck="true"
         ></textarea>
         <button
           id="confessionButton"
           type="submit"
-          class="px-5 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#cccccc] transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
+          class="px-5 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#cccccc] transition"
         >
           POST
         </button>
       </form>
 
-      <!-- Chat Form -->
-      <form 
-        id="chatForm" 
-        class="flex gap-3 border-t border-[#333]"
-        aria-label="Send a message"
-      >
-        <label for="chatInput" class="sr-only">Type a message</label>
+      <form id="chatForm" class="flex gap-3 border-t border-[#333]">
         <textarea
           id="chatInput"
           rows="1"
           class="flex-1 resize-none focus:outline-none text-sm"
           placeholder="Type a message..."
           required
-          maxlength="2000"
-          autocomplete="off"
-          spellcheck="true"
         ></textarea>
         <button
           id="chatButton"
           type="submit"
-          class="px-5 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#cccccc] transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
+          class="px-5 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#cccccc] transition"
         >
           SEND
         </button>
       </form>
     </main>
 
-    <!-- Profile Modal -->
-    <div 
-      id="profileModal" 
-      class="modal-base"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="profileModalTitle"
-      aria-hidden="true"
-    >
+    <div id="profileModal" class="modal-base">
       <div
         class="modal-content bg-[#1c1c1c] p-6 rounded-xl border border-[#333] w-full max-w-sm flex flex-col gap-4 shadow-2xl"
       >
-        <h2 id="profileModalTitle" class="text-xl font-bold text-white">Edit Profile</h2>
+        <h2 class="text-xl font-bold text-white">Edit Profile</h2>
         <div class="flex flex-col gap-2">
           <label
             for="modalUsernameInput"
             class="text-xs font-medium text-[#888]"
+            >USERNAME</label
           >
-            USERNAME
-          </label>
           <input
             type="text"
             id="modalUsernameInput"
             placeholder="Enter username"
-            class="w-full p-3 rounded-lg focus:outline-none bg-[#0a0a0a] text-white border border-[#333] text-sm focus-visible:ring-2 focus-visible:ring-white"
-            maxlength="30"
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-            pattern="^[a-zA-Z0-9_\- ]+$"
-            title="Only letters, numbers, spaces, underscores, and hyphens allowed"
+            class="w-full p-3 rounded-lg focus:outline-none bg-[#0a0a0a] text-white border border-[#333] text-sm"
           />
         </div>
         <div class="flex gap-3 mt-4">
           <button
             id="modalCloseButton"
-            type="button"
             class="flex-1 px-4 py-2 rounded-lg font-medium text-sm bg-transparent border border-[#333] text-[#888] hover:text-white hover:border-white transition"
           >
             Cancel
           </button>
           <button
             id="modalSaveButton"
-            type="button"
             class="flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#ddd] transition"
           >
             Save
@@ -338,38 +211,25 @@
       </div>
     </div>
 
-    <!-- Edit Message Modal -->
-    <div 
-      id="editModal" 
-      class="modal-base"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="editModalTitle"
-      aria-hidden="true"
-    >
+    <div id="editModal" class="modal-base">
       <div
         class="modal-content bg-[#1c1c1c] p-6 rounded-xl border border-[#333] w-full max-w-sm flex flex-col gap-4 shadow-2xl"
       >
-        <h2 id="editModalTitle" class="text-xl font-bold text-white">Edit Message</h2>
-        <label for="modalEditTextArea" class="sr-only">Edit your message</label>
+        <h2 class="text-xl font-bold text-white">Edit Message</h2>
         <textarea
           id="modalEditTextArea"
           rows="4"
-          class="w-full p-3 rounded-lg resize-none focus:outline-none bg-[#0a0a0a] text-white border border-[#333] text-sm focus-visible:ring-2 focus-visible:ring-white"
-          maxlength="2000"
-          spellcheck="true"
+          class="w-full p-3 rounded-lg resize-none focus:outline-none bg-[#0a0a0a] text-white border border-[#333] text-sm"
         ></textarea>
         <div class="flex gap-3 mt-4">
           <button
             id="editModalCancelButton"
-            type="button"
             class="flex-1 px-4 py-2 rounded-lg font-medium text-sm bg-transparent border border-[#333] text-[#888] hover:text-white hover:border-white transition"
           >
             Cancel
           </button>
           <button
             id="editModalSaveButton"
-            type="button"
             class="flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#ddd] transition"
           >
             Save
@@ -378,53 +238,35 @@
       </div>
     </div>
 
-    <!-- Confirm Modal -->
-    <div 
-      id="confirmModal" 
-      class="modal-base"
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="confirmModalTitle"
-      aria-describedby="confirmModalText"
-      aria-hidden="true"
-    >
+    <div id="confirmModal" class="modal-base">
       <div
         class="modal-content bg-[#1c1c1c] p-6 rounded-xl border border-[#333] w-full max-w-sm flex flex-col gap-4 shadow-2xl"
       >
-        <h2 id="confirmModalTitle" class="text-lg font-bold text-white">Confirm</h2>
+        <h2 class="text-lg font-bold text-white">Confirm</h2>
         <p id="confirmModalText" class="text-sm text-[#888]">Are you sure?</p>
         <div class="flex gap-3 mt-4">
           <button
             id="confirmModalNoButton"
-            type="button"
             class="flex-1 px-4 py-2 rounded-lg font-medium text-sm bg-transparent border border-[#333] text-[#888] hover:text-white hover:border-white transition"
           >
             Cancel
           </button>
-          <div id="confirmModalActionContainer" class="flex gap-2 flex-1">
-            <button id="confirmModalYesButton" type="button" class="hidden">Yes</button>
-          </div>
+          <button id="confirmModalYesButton" class="hidden">Yes</button>
         </div>
       </div>
     </div>
 
-    <!-- Context Menu -->
-    <div 
-      id="contextMenu"
-      role="menu"
-      aria-label="Message actions"
-    >
-      <ul role="none">
-        <li id="menuEdit" role="menuitem" tabindex="-1">Edit Message</li>
-        <li id="menuDelete" role="menuitem" tabindex="-1" class="text-red-500 hover:text-red-400">
+    <div id="contextMenu" class="">
+      <ul>
+        <li id="menuEdit">Edit Message</li>
+        <li id="menuDelete" class="text-red-500 hover:text-red-400">
           Delete Message
         </li>
-        <li class="separator" role="separator"></li>
-        <li id="menuSelect" role="menuitem" tabindex="-1">Select</li>
+        <li class="separator"></li>
+        <li id="menuSelect">Select</li>
       </ul>
     </div>
 
-    <!-- App Script -->
     <script type="module" src="app.js"></script>
   </body>
 </html>

@@ -1,242 +1,108 @@
-/* ============================================================
-   KONVO - OBSIDIAN THEME
-   Version: 2.1 (Kebab Menu Fixed)
-   ============================================================ */
-
-/* ============================
-   1. CSS CUSTOM PROPERTIES
-   ============================ */
+/* OBSIDIAN THEME PALETTE */
 :root {
-  /* Color Palette */
-  --bg-color: #0a0a0a;
-  --surface: #1c1c1c;
-  --border-color: #333333;
-  --text-main: #ededed;
-  --text-muted: #888888;
-  --accent: #ffffff;
-  --danger: #ef4444;
-  --success: #22c55e;
-  --warning: #fbbf24;
-  --highlight: #262626;
-
-  /* Animation Timing */
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-out-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
-
-  /* Spacing */
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
-
-  /* Border Radius */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-full: 9999px;
-
-  /* Z-Index Layers */
-  --z-base: 1;
-  --z-dropdown: 100;
-  --z-sticky: 200;
-  --z-modal: 1000;
-  --z-tooltip: 1100;
+  --bg-color: #0a0a0a;         
+  --surface: #1c1c1c;          
+  --border-color: #333333;     
+  --text-main: #ededed;        
+  --text-muted: #888888;       
+  --accent: #ffffff;           
+  --danger: #ef4444;           
+  --highlight: #262626;        
 }
 
-/* ============================
-   2. BASE STYLES & RESETS
-   ============================ */
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+/* ANIMATION VARIABLES */
+:root {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1); /* "Classy" smooth snap */
 }
 
-html {
-  -moz-text-size-adjust: none;
-  -webkit-text-size-adjust: none;
-  text-size-adjust: none;
-}
-
+/* Base styling */
 body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background-color: var(--bg-color);
   color: var(--text-main);
-  overflow-x: hidden;
-  line-height: 1.5;
-  margin: 0;
-  padding: 0;
-  overscroll-behavior: none;
+  overflow-x: hidden; /* Prevent scrollbar jumps */
 }
 
-/* ============================
-   3. SECURITY-FOCUSED STYLES
-   ============================ */
-
-button,
-a,
-input,
-textarea,
-[role="button"],
-[tabindex] {
+/* REMOVE MOBILE TAP HIGHLIGHT */
+button, 
+a, 
+input, 
+textarea {
   -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.glow {
+  text-shadow: none;
 }
 
-.no-select {
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
+.neon-border {
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+  border-radius: 0.5rem;
 }
 
-a[target="_blank"]::after {
-  content: " ↗";
-  font-size: 0.75em;
-  opacity: 0.7;
-}
-
-[hidden],
-.hidden {
-  display: none !important;
-  pointer-events: none !important;
-  visibility: hidden !important;
-}
-
-img {
-  -webkit-user-drag: none;
-  user-select: none;
-  pointer-events: auto;
-}
-
-/* ============================
-   4. SCROLLBAR STYLES
-   ============================ */
-
+/* SMOOTH SCROLLBAR */
 ::-webkit-scrollbar {
   width: 6px;
-  height: 6px;
 }
-
 ::-webkit-scrollbar-track {
   background: var(--bg-color);
 }
-
 ::-webkit-scrollbar-thumb {
   background: #333;
   border-radius: 3px;
-  transition: background 0.3s ease;
+  transition: background 0.3s;
 }
-
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #333 var(--bg-color);
-}
-
-/* ============================
-   5. FORM ELEMENTS
-   ============================ */
-
 textarea,
 button,
-input[type="text"],
-input[type="email"],
-input[type="password"] {
+input[type="text"] {
   font-family: "Inter", sans-serif;
   background-color: var(--surface);
   border: 1px solid var(--border-color);
   color: var(--text-main);
   transition: all 0.2s ease;
-  font-size: 1rem;
 }
 
 textarea::placeholder,
-input::placeholder {
+input[type="text"]::placeholder {
   color: var(--text-muted);
   opacity: 1;
 }
 
 textarea:focus,
-input[type="text"]:focus,
-input[type="email"]:focus,
-input[type="password"]:focus {
+input[type="text"]:focus {
   outline: none;
   background-color: var(--highlight);
   border-color: var(--text-muted);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.05); /* Subtle focus ring */
 }
 
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset !important;
-  -webkit-text-fill-color: var(--text-main) !important;
-  caret-color: var(--text-main);
-}
-
-button {
-  cursor: pointer;
-  border: 1px solid var(--border-color);
-  transition: all 0.2s ease;
-}
-
-button:hover:not(:disabled) {
+button:hover {
   background-color: var(--text-main);
   color: var(--bg-color);
   border-color: var(--text-main);
-  transform: translateY(-1px);
+  transform: translateY(-1px); /* Micro-lift */
 }
 
-button:active:not(:disabled) {
-  transform: translateY(0);
+button:active {
+  transform: translateY(0px);
 }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+#feedContainer {
+  background-color: transparent;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding-bottom: 20px;
+  overflow-anchor: none;
 }
 
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+/* --- ANIMATIONS START --- */
 
-/* ============================
-   6. ANIMATIONS
-   ============================ */
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
+/* 1. Cinematic Slide Up for Messages */
 @keyframes smoothSlideUp {
   0% {
     opacity: 0;
@@ -248,89 +114,31 @@ a:focus-visible {
   }
 }
 
+/* 2. System "Breathing" for Loading Text */
 @keyframes systemPulse {
-  0%, 100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-    text-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
-  }
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; text-shadow: 0 0 8px rgba(255,255,255,0.2); }
 }
 
+/* 3. Pop In for Modals */
 @keyframes modalZoom {
-  0% {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+  0% { opacity: 0; transform: scale(0.95) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
 }
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes shake {
-  0%, 100% {
-    transform: translateX(0);
-  }
-  10%, 30%, 50%, 70%, 90% {
-    transform: translateX(-5px);
-  }
-  20%, 40%, 60%, 80% {
-    transform: translateX(5px);
-  }
-}
-
-.shake {
-  animation: shake 0.5s ease-in-out;
-}
-
-/* ============================
-   7. LOADING STATE
-   ============================ */
 
 #loading {
   animation: systemPulse 2s infinite ease-in-out;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: 'Courier New', Courier, monospace; /* Tech feel */
   letter-spacing: 2px;
   font-size: 0.8rem;
-  color: var(--text-muted);
 }
 
-/* ============================
-   8. FEED CONTAINER
-   ============================ */
-
-#feedContainer {
-  background-color: transparent;
-  overflow-y: auto;
-  scroll-behavior: smooth;
-  padding-bottom: 20px;
-  overflow-anchor: none;
-  contain: layout style;
-}
-
-/* ============================
-   9. MESSAGE BUBBLES (FIXED)
-   ============================ */
-
+/* MESSAGE BUBBLE */
 .message-bubble {
   background-color: var(--surface);
   border: 1px solid var(--border-color);
   word-wrap: break-word;
   white-space: pre-wrap;
-  overflow-wrap: break-word;
-  word-break: break-word;
-  hyphens: auto;
   padding: 0.75rem 1rem;
   position: relative;
   transition: background-color 0.2s, transform 0.2s, border-color 0.2s;
@@ -338,18 +146,18 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   min-width: 140px;
-  max-width: 100%;
-  z-index: var(--z-base);
+  z-index: 10;
   cursor: default;
   color: var(--text-main);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
+  
+  /* APPLY ANIMATION */
   animation: smoothSlideUp 0.4s var(--ease-out-expo) forwards;
+  /* Optimize rendering */
   will-change: transform, opacity;
-  /* FIXED: Removed contain: content - was clipping kebab button */
-  /* FIXED: Ensure overflow is visible */
-  overflow: visible;
 }
 
+/* Subtle hover effect for bubbles */
 .message-bubble:hover {
   border-color: #444;
   background-color: #232323;
@@ -373,17 +181,10 @@ body.selection-mode .message-bubble {
 .selected-message {
   background-color: #333 !important;
   border-color: var(--text-main) !important;
-  transform: scale(1.01);
+  transform: scale(1.01); /* Slight pop when selected */
 }
 
-.message-bubble.pinned {
-  border-left: 4px solid var(--warning) !important;
-}
-
-/* ============================
-   10. MESSAGE FOOTER
-   ============================ */
-
+/* FOOTER INSIDE BUBBLE */
 .bubble-footer {
   display: flex;
   align-items: center;
@@ -393,9 +194,9 @@ body.selection-mode .message-bubble {
 }
 
 .inner-timestamp {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  opacity: 0.5;
+  font-size: 0.65rem; 
+  color: var(--text-muted); 
+  opacity: 0.5; 
   font-weight: 500;
   white-space: nowrap;
   transition: opacity 0.3s ease;
@@ -406,6 +207,47 @@ body.selection-mode .message-bubble {
   color: var(--text-main);
 }
 
+/* KEBAB BUTTON */
+.kebab-btn {
+  position: absolute;
+  top: -6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  opacity: 0.5; 
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 25; 
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5); /* Subtle shadow for depth */
+}
+
+.message-bubble:hover .kebab-btn {
+    opacity: 1;
+}
+
+.kebab-btn:hover {
+  opacity: 1 !important;
+  background-color: var(--text-main);
+  color: var(--bg-color);
+  border-color: var(--text-main);
+  transform: scale(1.15) rotate(90deg); /* Rotate effect on hover */
+}
+
+.my-message .kebab-btn {
+  left: -28px;
+}
+
+.message-bubble:not(.my-message) .kebab-btn {
+  right: -28px;
+}
+
 .edited-marker {
   font-size: 0.5rem;
   opacity: 0.5;
@@ -413,124 +255,7 @@ body.selection-mode .message-bubble {
   font-style: italic;
 }
 
-/* ============================
-   11. BUBBLE WRAPPER
-   ============================ */
-
-.bubble-wrapper {
-  position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  max-width: 100%;
-}
-
-.bubble-wrapper.my-bubble-wrapper {
-  align-items: flex-end;
-}
-
-/* ============================
-   12. KEBAB MENU BUTTON (TOP CORNER OUTSIDE)
-   ============================ */
-
-.kebab-btn {
-  position: absolute;
-  top: 0;
-  right: -32px;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-radius: 50%;
-  background: var(--surface);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  opacity: 0;
-  visibility: hidden;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s var(--ease-out-expo);
-  z-index: calc(var(--z-base) + 50);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  transform: scale(0.8);
-}
-
-/* For my messages - position at top-left corner outside */
-.bubble-wrapper.my-bubble-wrapper .kebab-btn {
-  right: auto;
-  left: -32px;
-}
-
-/* Show on message-wrapper hover - same as reaction/reply */
-.message-wrapper:hover .kebab-btn {
-  opacity: 0.4;
-  visibility: visible;
-  transform: scale(1);
-}
-
-.kebab-btn:hover {
-  opacity: 1 !important;
-  visibility: visible !important;
-  background-color: var(--text-main);
-  color: var(--bg-color);
-  border-color: var(--text-main);
-  transform: scale(1.15) !important;
-}
-
-.kebab-btn:focus {
-  opacity: 1;
-  visibility: visible;
-  transform: scale(1);
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* Touch devices - always show */
-@media (hover: none) and (pointer: coarse) {
-  .kebab-btn {
-    opacity: 0.5;
-    visibility: visible;
-    transform: scale(1);
-  }
-  
-  .message-wrapper:active .kebab-btn {
-    opacity: 1;
-  }
-}
-
-/* Small screens - adjust position */
-@media (max-width: 640px) {
-  .kebab-btn {
-    width: 24px;
-    height: 24px;
-    right: -28px;
-  }
-  
-  .bubble-wrapper.my-bubble-wrapper .kebab-btn {
-    right: auto;
-    left: -28px;
-  }
-}
-
-/* Extra small screens - tighter position */
-@media (max-width: 400px) {
-  .kebab-btn {
-    right: -22px;
-    width: 22px;
-    height: 22px;
-  }
-  
-  .bubble-wrapper.my-bubble-wrapper .kebab-btn {
-    right: auto;
-    left: -22px;
-  }
-}
-
-/* ============================
-   13. PROFILE PHOTOS
-   ============================ */
-
+/* PROFILE PHOTO */
 .chat-pfp {
   width: 32px;
   height: 32px;
@@ -539,25 +264,16 @@ body.selection-mode .message-bubble {
   object-fit: cover;
   flex-shrink: 0;
   transition: all 0.3s ease;
-  filter: grayscale(100%);
-  background-color: var(--surface);
+  filter: grayscale(100%); 
 }
 
 .message-bubble:hover .chat-pfp {
-  filter: grayscale(0%);
-  border-color: var(--text-main);
-  transform: scale(1.05);
+    filter: grayscale(0%);
+    border-color: var(--text-main);
+    transform: scale(1.05); /* Slight zoom on hover */
 }
 
-.chat-pfp[src=""],
-.chat-pfp:not([src]) {
-  background: linear-gradient(135deg, var(--surface) 0%, var(--highlight) 100%);
-}
-
-/* ============================
-   14. ADMIN BADGE
-   ============================ */
-
+/* ADMIN BADGE */
 .admin-badge {
   background-color: var(--text-main);
   color: var(--bg-color);
@@ -569,15 +285,10 @@ body.selection-mode .message-bubble {
   margin: 0 6px;
   align-self: center;
   text-transform: uppercase;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
-  user-select: none;
-  pointer-events: none;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2); /* White glow */
 }
 
-/* ============================
-   15. MESSAGE WRAPPER & ACTIONS
-   ============================ */
-
+/* SIDE ACTIONS */
 .message-wrapper {
   display: flex;
   align-items: flex-end;
@@ -588,20 +299,20 @@ body.selection-mode .message-bubble {
   background: none;
   border: none;
   color: var(--text-muted);
-  opacity: 0;
+  opacity: 0; 
   cursor: pointer;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1rem;
-  transition: all 0.3s var(--ease-out-expo);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   margin-bottom: 4px;
   flex-shrink: 0;
-  position: relative;
-  z-index: calc(var(--z-base) + 20);
+  position: relative; 
+  z-index: 30; 
   transform: scale(0.8);
 }
 
@@ -609,7 +320,6 @@ body.selection-mode .message-bubble {
   opacity: 0.4;
   transform: scale(1);
 }
-
 .side-action-btn:hover {
   opacity: 1 !important;
   color: var(--text-main);
@@ -617,25 +327,14 @@ body.selection-mode .message-bubble {
   transform: scale(1.15) !important;
 }
 
-/* Touch devices - always show action buttons */
-@media (hover: none) and (pointer: coarse) {
-  .side-action-btn {
-    opacity: 0.5;
-    transform: scale(1);
-  }
-}
-
-/* ============================
-   16. REACTIONS
-   ============================ */
-
+/* REACTION CHIPS */
 .reaction-chips-container {
   position: absolute;
   bottom: -12px;
   left: 8px;
   display: flex;
   gap: 4px;
-  z-index: calc(var(--z-base) + 10);
+  z-index: 20;
 }
 
 .my-message .reaction-chips-container {
@@ -646,7 +345,7 @@ body.selection-mode .message-bubble {
 .reaction-chip {
   background-color: var(--surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   padding: 2px 8px;
   font-size: 0.7rem;
   display: flex;
@@ -655,14 +354,14 @@ body.selection-mode .message-bubble {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
   cursor: pointer;
   color: var(--text-muted);
-  transition: all 0.2s ease;
+  transition: all 0.2s;
   animation: modalZoom 0.2s var(--ease-out-expo);
 }
 
 .reaction-chip:hover {
-  border-color: var(--text-main);
-  color: var(--text-main);
-  transform: translateY(-2px);
+    border-color: var(--text-main);
+    color: var(--text-main);
+    transform: translateY(-2px);
 }
 
 .reaction-chip.user-reacted {
@@ -671,27 +370,26 @@ body.selection-mode .message-bubble {
   color: var(--text-main);
 }
 
+/* POPUP PICKER */
 .reaction-picker {
   position: fixed;
   background-color: var(--surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   padding: 8px;
   display: flex;
   gap: 12px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7);
   animation: modalZoom 0.2s var(--ease-out-expo);
-  z-index: var(--z-tooltip);
+  z-index: 1000;
   backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
 }
 
 .reaction-option {
   font-size: 1.5rem;
   cursor: pointer;
-  transition: transform 0.2s ease;
+  transition: transform 0.2s;
   user-select: none;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
 .reaction-option:active {
@@ -702,10 +400,11 @@ body.selection-mode .message-bubble {
   transform: scale(1.2) translateY(-2px);
 }
 
-/* ============================
-   17. SCROLL TO BOTTOM BUTTON
-   ============================ */
+.hidden {
+  display: none !important;
+}
 
+/* Scroll To Bottom Button */
 #scrollToBottomBtn {
   position: absolute;
   bottom: 80px;
@@ -722,7 +421,7 @@ body.selection-mode .message-bubble {
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
-  z-index: var(--z-sticky);
+  z-index: 20;
   transition: all 0.3s ease;
   animation: modalZoom 0.3s var(--ease-out-expo);
 }
@@ -751,18 +450,15 @@ body.selection-mode .message-bubble {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  animation: systemPulse 1s infinite;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  animation: systemPulse 1s infinite; /* Attention grabber */
 }
 
 #newMsgCount.hidden {
   display: none;
 }
 
-/* ============================
-   18. NAVIGATION
-   ============================ */
-
+/* MISC UI ELEMENTS */
 .nav-item {
   cursor: pointer;
   padding: 8px 16px;
@@ -771,7 +467,6 @@ body.selection-mode .message-bubble {
   color: var(--text-muted);
   font-weight: 500;
   letter-spacing: 0.5px;
-  user-select: none;
 }
 
 .nav-item.active,
@@ -779,10 +474,6 @@ body.selection-mode .message-bubble {
   color: var(--text-main);
   border-bottom-color: var(--text-main);
 }
-
-/* ============================
-   19. TYPING INDICATOR
-   ============================ */
 
 #typingIndicator {
   height: 1.5rem;
@@ -792,12 +483,7 @@ body.selection-mode .message-bubble {
   transition: opacity 0.3s ease;
   font-style: italic;
   animation: systemPulse 1.5s infinite ease-in-out;
-  padding-left: var(--spacing-md);
 }
-
-/* ============================
-   20. REPLY BAR
-   ============================ */
 
 #replyBar {
   background-color: var(--surface);
@@ -816,7 +502,6 @@ body.selection-mode .message-bubble {
 #replyBar .reply-info {
   flex: 1;
   font-size: 0.85rem;
-  overflow: hidden;
 }
 
 #replyBar .reply-author {
@@ -839,24 +524,22 @@ body.selection-mode .message-bubble {
   color: var(--text-muted);
   cursor: pointer;
   padding: 0.25rem 0.5rem;
-  transition: color 0.2s ease;
+  transition: color 0.2s;
 }
 
 #replyBar button:hover {
-  color: var(--text-main);
+    color: var(--text-main);
 }
 
 .reply-preview {
   background-color: rgba(255, 255, 255, 0.05);
   border-left: 2px solid var(--text-muted);
-  padding: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
-  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  border-radius: 4px;
   font-size: 0.75rem;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-  max-height: 60px;
-  overflow: hidden;
+  transition: background-color 0.2s;
 }
 
 .reply-preview:hover {
@@ -868,7 +551,6 @@ body.selection-mode .message-bubble {
   margin-bottom: 0.25rem;
   color: var(--text-main);
 }
-
 .reply-preview .reply-text {
   white-space: nowrap;
   overflow: hidden;
@@ -876,27 +558,21 @@ body.selection-mode .message-bubble {
   color: var(--text-muted);
 }
 
-/* ============================
-   21. CONTEXT MENU
-   ============================ */
-
+/* CONTEXT MENU & MODALS */
 #contextMenu {
   position: fixed;
-  z-index: var(--z-tooltip);
+  z-index: 1000;
   background-color: var(--surface);
   border: 1px solid var(--border-color);
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.8);
-  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px -5px rgba(0,0,0,0.8);
+  border-radius: 8px;
   padding: 4px;
-  min-width: 160px;
+  min-width: 140px;
   opacity: 0;
   visibility: hidden;
   transform: scale(0.95);
-  transform-origin: top left;
-  transition: 
-    opacity 0.15s ease-out, 
-    visibility 0s linear 0.15s, 
-    transform 0.15s ease-out;
+  transform-origin: top right;
+  transition: opacity 0.1s ease-out, visibility 0s linear 0.1s, transform 0.1s ease-out;
 }
 
 #contextMenu.is-open {
@@ -911,41 +587,24 @@ body.selection-mode .message-bubble {
   margin: 0;
   padding: 0;
 }
-
 #contextMenu li {
-  padding: 0.6rem 0.85rem;
+  padding: 0.5rem 0.75rem;
   cursor: pointer;
   transition: all 0.2s ease;
   color: var(--text-main);
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   font-size: 0.85rem;
-  user-select: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
-
 #contextMenu li:hover {
   background-color: var(--highlight);
-  padding-left: 1rem;
+  padding-left: 1rem; /* Slight shift on hover */
 }
-
 #contextMenu li.separator {
   height: 1px;
   background-color: var(--border-color);
   margin: 4px 0;
   padding: 0;
-  cursor: default;
 }
-
-#contextMenu li.separator:hover {
-  background-color: var(--border-color);
-  padding-left: 0;
-}
-
-/* ============================
-   22. SELECTION BAR
-   ============================ */
 
 #selectionBar {
   background-color: var(--surface);
@@ -955,60 +614,45 @@ body.selection-mode .message-bubble {
 }
 
 #selectionCount {
-  color: var(--text-main);
+    color: var(--text-main);
 }
 
 #selectionCancel {
-  color: var(--text-muted);
+    color: var(--text-muted);
 }
 
 #selectionDelete {
-  color: var(--danger);
+    color: var(--danger);
 }
-
-/* ============================
-   23. MODALS
-   ============================ */
 
 .modal-base {
   position: fixed;
   inset: 0;
   background-color: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px); /* Classy blur */
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-md);
+  padding: 1rem;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.3s ease;
-  z-index: var(--z-modal);
-  isolation: isolate;
+  z-index: 50;
 }
 
 .modal-base.is-open {
   opacity: 1;
   visibility: visible;
 }
-
 .modal-content {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
   transition: all 0.3s var(--ease-out-expo);
-  max-width: 90vw;
-  max-height: 90vh;
-  overflow: auto;
 }
-
 .modal-base.is-open .modal-content {
   transform: scale(1) translateY(0);
   opacity: 1;
 }
-
-/* ============================
-   24. DATE SEPARATOR
-   ============================ */
 
 .date-separator {
   display: flex;
@@ -1016,7 +660,6 @@ body.selection-mode .message-bubble {
   margin: 24px 0 12px 0;
   width: 100%;
   opacity: 0.9;
-  user-select: none;
 }
 
 .date-separator span {
@@ -1025,180 +668,22 @@ body.selection-mode .message-bubble {
   font-size: 0.7rem;
   font-weight: 600;
   padding: 4px 12px;
-  border-radius: var(--radius-full);
+  border-radius: 999px;
   border: 1px solid var(--border-color);
 }
 
-/* ============================
-   25. PINNED MESSAGE BAR
-   ============================ */
-
-#pinnedMessageBar {
-  overflow: hidden;
-}
-
-#pinnedMessageText {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ============================
-   26. INPUT FORMS
-   ============================ */
-
-#chatForm,
-#confessionForm {
+/* INPUT BOX */
+#chatForm, #confessionForm {
   padding: 12px;
   background-color: rgba(10, 10, 10, 0.95);
   border-top: 1px solid var(--border-color);
 }
 
-#chatInput,
-#confessionInput {
+#chatInput, #confessionInput {
   height: 45px !important;
   min-height: 45px;
-  max-height: 120px;
   padding: 10px 16px;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   overflow: hidden;
   background-color: var(--surface);
-  resize: none;
-  overflow-wrap: break-word;
-  word-break: break-word;
-}
-
-/* ============================
-   27. UTILITY CLASSES
-   ============================ */
-
-.glow {
-  text-shadow: none;
-}
-
-.neon-border {
-  border: 1px solid var(--border-color);
-  box-shadow: none;
-  border-radius: var(--radius-sm);
-}
-
-.error {
-  border-color: var(--danger) !important;
-  animation: shake 0.5s ease-in-out;
-}
-
-.success {
-  border-color: var(--success) !important;
-}
-
-.loading {
-  position: relative;
-  pointer-events: none;
-  opacity: 0.7;
-}
-
-.loading::after {
-  content: "";
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  top: 50%;
-  left: 50%;
-  margin-left: -8px;
-  margin-top: -8px;
-  border: 2px solid transparent;
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ============================
-   28. BANNED USER OVERLAY
-   ============================ */
-
-.banned-overlay {
-  position: fixed;
-  inset: 0;
-  background-color: var(--bg-color);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 99999;
-  color: var(--danger);
-  font-weight: bold;
-  gap: var(--spacing-md);
-  pointer-events: all;
-  user-select: none;
-}
-
-/* ============================
-   29. PRINT STYLES
-   ============================ */
-
-@media print {
-  #contextMenu,
-  #selectionBar,
-  #replyBar,
-  .modal-base,
-  .kebab-btn,
-  .side-action-btn,
-  .reaction-picker,
-  #scrollToBottomBtn,
-  #chatForm,
-  #confessionForm,
-  #typingIndicator,
-  #pinnedMessageBar {
-    display: none !important;
-  }
-
-  body {
-    background-color: white;
-    color: black;
-  }
-
-  .message-bubble {
-    background-color: #f5f5f5;
-    border-color: #ddd;
-    color: black;
-    break-inside: avoid;
-  }
-}
-
-/* ============================
-   30. HIGH CONTRAST MODE
-   ============================ */
-
-@media (prefers-contrast: high) {
-  :root {
-    --border-color: #666666;
-    --text-muted: #aaaaaa;
-  }
-
-  .message-bubble {
-    border-width: 2px;
-  }
-
-  button,
-  input,
-  textarea {
-    border-width: 2px;
-  }
-}
-
-/* ============================
-   31. DARK MODE ENFORCEMENT
-   ============================ */
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: dark;
-  }
 }

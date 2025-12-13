@@ -1,10 +1,5 @@
-// ============================================================
-// KONVO - ANONYMOUS CHAT APPLICATION
-// Version: 2.1 (Kebab Menu Fix)
-// ============================================================
-'use strict';
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+// *** ADDED: App Check Import ***
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
 import {
   getAuth,
@@ -30,346 +25,126 @@ import {
   writeBatch,
   arrayUnion,
   arrayRemove,
-  enableIndexedDbPersistence,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// ============================================================
-// SECURITY UTILITIES
-// ============================================================
-
-/**
- * Sanitize text to prevent XSS attacks
- * @param {string} text - Raw text input
- * @returns {string} - Sanitized text
- */
-function sanitizeText(text) {
-  if (typeof text !== 'string') return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-    .replace(/\//g, '&#x2F;')
-    .replace(/`/g, '&#x60;');
-}
-
-/**
- * Validate username format
- * @param {string} username - Username to validate
- * @returns {boolean} - Whether username is valid
- */
-function isValidUsername(username) {
-  if (typeof username !== 'string') return false;
-  const trimmed = username.trim();
-  if (trimmed.length === 0 || trimmed.length > 30) return false;
-  
-  // Reserved usernames check
-  const reserved = ['anonymous', 'admin', 'moderator', 'system', 'konvo', 'mod'];
-  const lowerUsername = trimmed.toLowerCase();
-  if (reserved.some(r => lowerUsername === r || lowerUsername.includes(r))) {
-    return false;
-  }
-  
-  // Only allow alphanumeric, spaces, underscores, hyphens
-  const usernameRegex = /^[A-Za-z0-9_\- ]+$/;
-  return usernameRegex.test(trimmed);
-}
-
-/**
- * Validate message text
- * @param {string} text - Message text to validate
- * @returns {boolean} - Whether text is valid
- */
-function isValidMessageText(text) {
-  if (typeof text !== 'string') return false;
-  const trimmed = text.trim();
-  if (trimmed.length === 0 || trimmed.length > 2000) return false;
-  
-  // Check for null bytes and control characters
-  const controlCharRegex = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
-  return !controlCharRegex.test(trimmed);
-}
-
-/**
- * Validate URL for profile photos
- * @param {string} url - URL to validate
- * @returns {boolean} - Whether URL is valid
- */
-function isValidProfilePhotoURL(url) {
-  if (typeof url !== 'string') return false;
-  if (url.length > 500) return false;
-  
-  const allowedPatterns = [
-    /^https:\/\/placehold\.co\/.*/,
-    /^https:\/\/ui-avatars\.com\/.*/,
-    /^https:\/\/api\.dicebear\.com\/.*/,
-  ];
-  
-  return allowedPatterns.some(pattern => pattern.test(url));
-}
-
-/**
- * Safely set element text content (prevents XSS)
- * @param {HTMLElement|null} element - Target element
- * @param {string} text - Text content
- */
-function setTextSafely(element, text) {
-  if (element && element instanceof HTMLElement) {
-    element.textContent = text || '';
-  }
-}
-
-/**
- * Safely create text node (prevents XSS)
- * @param {string} text - Text content
- * @returns {Text} - Text node
- */
-function createSafeTextNode(text) {
-  return document.createTextNode(text || '');
-}
-
-/**
- * Debounce function for performance
- * @param {Function} func - Function to debounce
- * @param {number} wait - Wait time in ms
- * @returns {Function} - Debounced function
- */
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
-/**
- * Throttle function for performance
- * @param {Function} func - Function to throttle
- * @param {number} limit - Limit time in ms
- * @returns {Function} - Throttled function
- */
-function throttle(func, limit) {
-  let inThrottle;
-  return function(...args) {
-    if (!inThrottle) {
-      func.apply(this, args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  };
-}
-
-/**
- * Escape CSS selector to prevent injection
- * @param {string} selector - Selector to escape
- * @returns {string} - Escaped selector
- */
-function escapeSelector(selector) {
-  if (typeof selector !== 'string') return '';
-  return CSS.escape(selector);
-}
-
-// ============================================================
-// FIREBASE CONFIGURATION
-// ============================================================
+// *** FIREBASE CONFIGURATION ***
+// SECURITY NOTE: These keys are intentionally public (required for client-side Firebase).
+// Actual security is enforced by Firebase Security Rules on the server.
+// Ensure your Firestore Security Rules restrict read/write access appropriately.
+// The reCAPTCHA site key below is also public by design; keep your SECRET key server-side only.
 const firebaseConfig = {
-  apiKey: "AIzaSyDOiYfkCf3Y1Fq7625HimKsm3wYwjBWoxc",
-  authDomain: "konvo-d357d.firebaseapp.com",
-  projectId: "konvo-d357d",
-  storageBucket: "konvo-d357d.firebasestorage.app",
-  messagingSenderId: "924631278394",
-  appId: "1:924631278394:web:84b8642b5366d869926603"
-};
+    apiKey: "AIzaSyDOiYfkCf3Y1Fq7625HimKsm3wYwjBWoxc",
+    authDomain: "konvo-d357d.firebaseapp.com",
+    projectId: "konvo-d357d",
+    storageBucket: "konvo-d357d.firebasestorage.app",
+    messagingSenderId: "924631278394",
+    appId: "1:924631278394:web:84b8642b5366d869926603"
+  };
 
-// App start time for determining new messages
 const appStartTime = Date.now();
 
-// ============================================================
-// DOM ELEMENTS
-// ============================================================
-const elements = {
-  // Containers
-  feedContainer: document.getElementById("feedContainer"),
-  loading: document.getElementById("loading"),
-  
-  // Navigation
-  navConfessions: document.getElementById("navConfessions"),
-  navChat: document.getElementById("navChat"),
-  
-  // Forms
-  confessionForm: document.getElementById("confessionForm"),
-  confessionInput: document.getElementById("confessionInput"),
-  chatForm: document.getElementById("chatForm"),
-  chatInput: document.getElementById("chatInput"),
-  
-  // Typing & Pinned
-  typingIndicator: document.getElementById("typingIndicator"),
-  pinnedMessageBar: document.getElementById("pinnedMessageBar"),
-  pinnedMessageText: document.getElementById("pinnedMessageText"),
-  
-  // Scroll
-  scrollToBottomBtn: document.getElementById("scrollToBottomBtn"),
-  newMsgCount: document.getElementById("newMsgCount"),
-  
-  // Profile Modal
-  profileButton: document.getElementById("profileButton"),
-  notificationButton: document.getElementById("notificationButton"),
-  profileModal: document.getElementById("profileModal"),
-  modalCloseButton: document.getElementById("modalCloseButton"),
-  modalSaveButton: document.getElementById("modalSaveButton"),
-  modalUsernameInput: document.getElementById("modalUsernameInput"),
-  
-  // Edit Modal
-  editModal: document.getElementById("editModal"),
-  modalEditTextArea: document.getElementById("modalEditTextArea"),
-  editModalCancelButton: document.getElementById("editModalCancelButton"),
-  editModalSaveButton: document.getElementById("editModalSaveButton"),
-  
-  // Confirm Modal
-  confirmModal: document.getElementById("confirmModal"),
-  confirmModalText: document.getElementById("confirmModalText"),
-  confirmModalNoButton: document.getElementById("confirmModalNoButton"),
-  confirmModalActionContainer: document.getElementById("confirmModalActionContainer"),
-  
-  // Context Menu
-  contextMenu: document.getElementById("contextMenu"),
-  menuEdit: document.getElementById("menuEdit"),
-  menuDelete: document.getElementById("menuDelete"),
-  menuSelect: document.getElementById("menuSelect"),
-  
-  // Selection Bar
-  selectionBar: document.getElementById("selectionBar"),
-  selectionCount: document.getElementById("selectionCount"),
-  selectionCancel: document.getElementById("selectionCancel"),
-  selectionDelete: document.getElementById("selectionDelete"),
-  
-  // Reply Bar
-  replyBar: document.getElementById("replyBar"),
-  replyAuthor: document.getElementById("replyAuthor"),
-  replyText: document.getElementById("replyText"),
-  cancelReply: document.getElementById("cancelReply"),
-};
+// DOM elements
+const feedContainer = document.getElementById("feedContainer");
+const loading = document.getElementById("loading");
+const navConfessions = document.getElementById("navConfessions");
+const navChat = document.getElementById("navChat");
+const confessionForm = document.getElementById("confessionForm");
+const confessionInput = document.getElementById("confessionInput");
+const chatForm = document.getElementById("chatForm");
+const chatInput = document.getElementById("chatInput");
+const typingIndicator = document.getElementById("typingIndicator");
 
-// Destructure for convenience
-const {
-  feedContainer, loading, navConfessions, navChat,
-  confessionForm, confessionInput, chatForm, chatInput,
-  typingIndicator, pinnedMessageBar, pinnedMessageText,
-  scrollToBottomBtn, newMsgCount, profileButton, notificationButton,
-  profileModal, modalCloseButton, modalSaveButton, modalUsernameInput,
-  editModal, modalEditTextArea, editModalCancelButton, editModalSaveButton,
-  confirmModal, confirmModalText, confirmModalNoButton, confirmModalActionContainer,
-  contextMenu, menuEdit, menuDelete, menuSelect,
-  selectionBar, selectionCount, selectionCancel, selectionDelete,
-  replyBar, replyAuthor, replyText, cancelReply
-} = elements;
+const pinnedMessageBar = document.getElementById("pinnedMessageBar");
+const pinnedMessageText = document.getElementById("pinnedMessageText");
+const scrollToBottomBtn = document.getElementById("scrollToBottomBtn");
+const newMsgCount = document.getElementById("newMsgCount");
 
-// Dynamic menu items (created at runtime)
+const profileButton = document.getElementById("profileButton");
+const profileModal = document.getElementById("profileModal");
+const modalCloseButton = document.getElementById("modalCloseButton");
+const modalSaveButton = document.getElementById("modalSaveButton");
+const modalUsernameInput = document.getElementById("modalUsernameInput");
+
+const editModal = document.getElementById("editModal");
+const modalEditTextArea = document.getElementById("modalEditTextArea");
+const editModalCancelButton = document.getElementById("editModalCancelButton");
+const editModalSaveButton = document.getElementById("editModalSaveButton");
+
+const confirmModal = document.getElementById("confirmModal");
+const confirmModalText = document.getElementById("confirmModalText");
+const confirmModalNoButton = document.getElementById("confirmModalNoButton");
+const confirmModalActionContainer = document.getElementById("confirmModalActionContainer") || createActionContainer();
+
+const contextMenu = document.getElementById("contextMenu");
+const menuEdit = document.getElementById("menuEdit");
+const menuDelete = document.getElementById("menuDelete");
+const menuSelect = document.getElementById("menuSelect");
+
 let menuPin = null;
 let menuBan = null;
 
-// ============================================================
-// STATE MANAGEMENT
-// ============================================================
-const state = {
-  // Firebase instances
-  app: null,
-  db: null,
-  auth: null,
-  
-  // User state
-  currentUserId: null,
-  currentUsername: "Anonymous",
-  currentProfilePhotoURL: null,
-  isCurrentUserAdmin: false,
-  
-  // Data caches
-  userProfiles: {},
-  lastConfessionDocs: [],
-  lastChatDocs: [],
-  
-  // Collections
-  confessionsCollection: null,
-  chatCollection: null,
-  typingStatusCollection: null,
-  
-  // Current page
-  currentPage: "chat",
-  
-  // UI state
-  isSelectionMode: false,
-  selectedMessages: new Set(),
-  currentContextMenuData: null,
-  replyToMessage: null,
-  notificationsEnabled: false,
-  
-  // Scroll state
-  unreadMessages: 0,
-  userIsAtBottom: true,
-  bottomObserver: null,
-  
-  // Edit state
-  docToEditId: null,
-  collectionToEdit: null,
-  
-  // Typing state
-  typingTimeout: null,
-  
-  // Flags
-  isInitialized: false,
-  isBanned: false,
-};
+const selectionBar = document.getElementById("selectionBar");
+const selectionCount = document.getElementById("selectionCount");
+const selectionCancel = document.getElementById("selectionCancel");
+const selectionDelete = document.getElementById("selectionDelete");
 
-// Unsubscribe functions
-const unsubscribers = {
-  confessions: () => {},
-  chat: () => {},
-  userProfiles: () => {},
-  typingStatus: () => {},
-  pinned: () => {},
-  banCheck: () => {},
-};
+const replyBar = document.getElementById("replyBar");
+const replyAuthor = document.getElementById("replyAuthor");
+const replyText = document.getElementById("replyText");
+const cancelReply = document.getElementById("cancelReply");
 
-// ============================================================
-// CONSTANTS
-// ============================================================
+// State
+let app, db, auth;
+let currentUserId = null;
+let currentUsername = "Anonymous";
+let currentProfilePhotoURL = null;
+let isCurrentUserAdmin = false; 
 
-const REACTION_TYPES = Object.freeze({
+let userProfiles = {};
+let confessionsCollection;
+let chatCollection;
+let typingStatusCollection;
+
+let unsubscribeConfessions = () => { };
+let unsubscribeChat = () => { };
+let unsubscribeUserProfiles = () => { };
+let unsubscribeTypingStatus = () => { };
+let unsubscribePinned = () => { };
+let unsubscribeBanCheck = () => { };
+
+let currentPage = "chat";
+let typingTimeout = null;
+
+let docToEditId = null;
+let collectionToEdit = null;
+
+let isSelectionMode = false;
+let selectedMessages = new Set();
+let currentContextMenuData = null;
+
+let replyToMessage = null;
+let notificationsEnabled = false;
+
+let unreadMessages = 0;
+let userIsAtBottom = true;
+let bottomObserver = null;
+
+const REACTION_TYPES = {
   thumbsup: "👍",
   laugh: "😂",
   surprised: "😮",
   heart: "❤️",
   skull: "💀"
-});
+};
 
-const USER_COLORS = Object.freeze([
+const USER_COLORS = [
   "#ff79c6", "#8be9fd", "#50fa7b", "#bd93f9", "#ffb86c",
   "#f1fa8c", "#ff5555", "#00e5ff", "#fab1a0", "#a29bfe",
   "#55efc4", "#fdcb6e", "#e17055", "#d63031", "#e84393",
   "#0984e3", "#00b894"
-]);
+];
 
-const MESSAGE_MAX_LENGTH = 2000;
-const USERNAME_MAX_LENGTH = 30;
-const TYPING_TIMEOUT = 3000;
-const RATE_LIMIT_MS = 2000;
-
-// ============================================================
-// UTILITY FUNCTIONS
-// ============================================================
-
-/**
- * Generate consistent color for user ID
- * @param {string} userId - User ID
- * @returns {string} - Hex color
- */
 function getUserColor(userId) {
-  if (!userId || typeof userId !== 'string') return USER_COLORS[0];
   let hash = 0;
   for (let i = 0; i < userId.length; i++) {
     hash = userId.charCodeAt(i) + ((hash << 5) - hash);
@@ -378,70 +153,6 @@ function getUserColor(userId) {
   return USER_COLORS[index];
 }
 
-/**
- * Format message timestamp
- * @param {Date} date - Message date
- * @returns {string} - Formatted time string
- */
-function formatMessageTime(date) {
-  if (!(date instanceof Date) || isNaN(date)) {
-    return 'Just now';
-  }
-  
-  const diff = Date.now() - date.getTime();
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  
-  if (minutes < 1) return "Just now";
-  if (minutes < 5) return `${minutes} mins ago`;
-  
-  return date.toLocaleTimeString([], { 
-    hour: "2-digit", 
-    minute: "2-digit", 
-    hour12: false 
-  });
-}
-
-/**
- * Get date header text
- * @param {Date} date - Date to format
- * @returns {string} - Header text
- */
-function getDateHeader(date) {
-  if (!(date instanceof Date) || isNaN(date)) {
-    return 'Today';
-  }
-  
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  
-  if (date.toDateString() === today.toDateString()) return "Today";
-  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-  
-  return date.toLocaleDateString([], { 
-    day: '2-digit', 
-    month: '2-digit', 
-    year: 'numeric' 
-  });
-}
-
-/**
- * Show toast/alert message
- * @param {string} message - Message to show
- * @param {string} type - Type of message (error, success, info)
- */
-function showToast(message, type = 'info') {
-  console.log(`[${type.toUpperCase()}]:`, message);
-  if (type === 'error') {
-    alert(message);
-  }
-}
-
-/**
- * Create action container for confirm modal if needed
- * @returns {HTMLElement|null}
- */
 function createActionContainer() {
   const existingYesBtn = document.getElementById("confirmModalYesButton");
   if (existingYesBtn && existingYesBtn.parentNode) {
@@ -451,2068 +162,706 @@ function createActionContainer() {
     existingYesBtn.parentNode.replaceChild(container, existingYesBtn);
     return container;
   }
-  return confirmModalActionContainer;
+  return null;
 }
 
-// ============================================================
-// SERVICE WORKER REGISTRATION
-// ============================================================
-
-/**
- * Register service worker for PWA capabilities
- */
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js', { scope: '/' })
-      .then(reg => {
-        console.log('SW registered:', reg.scope);
-        
-        // Check for updates
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('New version available');
-              }
-            });
-          }
-        });
-      })
-      .catch(err => console.error('SW registration failed:', err));
+    navigator.serviceWorker.register('sw.js').catch(console.error);
   }
 }
 
-// ============================================================
-// NOTIFICATION FUNCTIONS
-// ============================================================
-
-/**
- * Setup notification button and permissions
- */
 function setupNotificationButton() {
-  if (!notificationButton) return;
-  
-  notificationButton.addEventListener("click", handleNotificationClick);
-  
-  // Check existing permission
+  const notifBtn = document.getElementById("notificationButton");
+  if (!notifBtn) return;
+  notifBtn.addEventListener("click", handleNotificationClick);
   if ("Notification" in window && Notification.permission === "granted") {
-    state.notificationsEnabled = true;
+    notificationsEnabled = true;
   }
-  
   updateNotificationIcon();
 }
 
-/**
- * Handle notification button click
- * @param {Event} e - Click event
- */
 async function handleNotificationClick(e) {
   e.preventDefault();
   e.stopPropagation();
-  
-  if (!("Notification" in window)) {
-    showToast("Notifications not supported in this browser", "error");
-    return;
-  }
-  
+  if (!("Notification" in window)) return;
   if (Notification.permission === "granted") {
-    state.notificationsEnabled = !state.notificationsEnabled;
+    notificationsEnabled = !notificationsEnabled;
     updateNotificationIcon();
-  } else if (Notification.permission !== "denied") {
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission === "granted") {
-        state.notificationsEnabled = true;
-        updateNotificationIcon();
-      }
-    } catch (err) {
-      console.error("Notification permission error:", err);
+  } else {
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      notificationsEnabled = true;
+      updateNotificationIcon();
     }
-  } else {
-    showToast("Notifications are blocked. Please enable in browser settings.", "error");
   }
 }
 
-/**
- * Update notification button icon based on state
- */
 function updateNotificationIcon() {
-  if (!notificationButton) return;
-  
-  const enabledIcon = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" 
-         fill="currentColor" stroke="currentColor" stroke-width="2" 
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-    </svg>`;
-  
-  const disabledIcon = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" 
-         fill="none" stroke="currentColor" stroke-width="2" 
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-      <path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path>
-      <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path>
-      <path d="M18 8a6 6 0 0 0-9.33-5"></path>
-      <line x1="1" y1="1" x2="23" y2="23"></line>
-    </svg>`;
-  
-  if (state.notificationsEnabled) {
-    notificationButton.classList.add("text-yellow-400");
-    notificationButton.innerHTML = enabledIcon;
-    notificationButton.title = "Notifications enabled - Click to disable";
+  const btn = document.getElementById("notificationButton");
+  if (!btn) return;
+  if (notificationsEnabled) {
+    btn.classList.add("text-yellow-400");
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>`;
   } else {
-    notificationButton.classList.remove("text-yellow-400");
-    notificationButton.innerHTML = disabledIcon;
-    notificationButton.title = "Notifications disabled - Click to enable";
+    btn.classList.remove("text-yellow-400");
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"></path><path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path><path d="M18 8a6 6 0 0 0-9.33-5"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
   }
 }
 
-/**
- * Show a notification
- * @param {string} title - Notification title
- * @param {string} body - Notification body
- */
 async function showNotification(title, body) {
-  if (!("Notification" in window) || !state.notificationsEnabled) return;
-  if (document.visibilityState === 'visible') return;
-  
-  const safeTitle = typeof title === 'string' ? title.substring(0, 50) : 'New Message';
-  const safeBody = typeof body === 'string' ? body.substring(0, 100) : '';
-  
+  if (!("Notification" in window) || !notificationsEnabled) return;
+  const cleanBody = body.length > 50 ? body.substring(0, 50) + "..." : body;
   try {
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.ready;
-      if (reg) {
-        await reg.showNotification(safeTitle, { 
-          body: safeBody, 
-          icon: "icon.jpg", 
-          badge: "icon.jpg",
-          tag: 'konvo-message',
-          renotify: true,
-          requireInteraction: false
-        });
-        return;
-      }
+      if (reg) { reg.showNotification(title, { body: cleanBody, icon: "icon.jpg" }); return; }
     }
-    new Notification(safeTitle, { body: safeBody, icon: "icon.jpg" });
-  } catch (e) {
-    console.error('Notification error:', e);
-  }
+    new Notification(title, { body: cleanBody, icon: "icon.jpg" });
+  } catch (e) { console.error(e); }
 }
 
-// ============================================================
-// ADMIN FUNCTIONS
-// ============================================================
-
-/**
- * Setup admin-specific menu items
- */
 function setupAdminMenu() {
-  const ul = contextMenu?.querySelector("ul");
+  const ul = contextMenu.querySelector("ul");
   if (!ul || document.getElementById("menuPin")) return;
-
-  // Create Pin menu item
+  
   menuPin = document.createElement("li");
   menuPin.id = "menuPin";
-  menuPin.setAttribute("role", "menuitem");
-  menuPin.setAttribute("tabindex", "-1");
-  menuPin.textContent = "Pin Message 📌";
+  menuPin.className = "hover:bg-[#262626]";
+  menuPin.textContent = "Pin Message";
   menuPin.addEventListener("click", togglePinMessage);
-  
-  if (menuDelete) {
-    ul.insertBefore(menuPin, menuDelete);
-  }
+  ul.insertBefore(menuPin, menuDelete);
 
-  // Create Ban menu item
   menuBan = document.createElement("li");
   menuBan.id = "menuBan";
   menuBan.className = "text-red-500 hover:text-red-400 font-bold border-t border-[#333] mt-1 pt-1";
-  menuBan.setAttribute("role", "menuitem");
-  menuBan.setAttribute("tabindex", "-1");
-  menuBan.textContent = "Ban User 🚫";
+  menuBan.textContent = "Ban User 🚫"; 
   menuBan.addEventListener("click", toggleBanUser);
   ul.appendChild(menuBan);
 }
 
-/**
- * Toggle pin status of a message
- */
 async function togglePinMessage() {
-  if (!state.currentContextMenuData || !state.db) return;
-  
-  const { id, isPinned, text } = state.currentContextMenuData;
+  if (!currentContextMenuData || !db) return;
+  const { id, isPinned, text } = currentContextMenuData;
   const isCurrentlyPinned = isPinned === "true";
-  
   hideDropdownMenu();
-  
   try {
-    const batch = writeBatch(state.db);
-    const msgRef = doc(state.db, state.currentPage, id);
-    
+    const batch = writeBatch(db);
+    const msgRef = doc(db, currentPage, id);
     batch.update(msgRef, { isPinned: !isCurrentlyPinned });
-    
-    const pinRef = doc(state.db, "pinned_messages", id);
-    if (isCurrentlyPinned) {
-      batch.delete(pinRef);
-    } else {
-      batch.set(pinRef, {
-        originalId: id,
-        collection: state.currentPage,
-        text: text?.substring(0, 200) || '',
-        pinnedBy: state.currentUserId,
-        timestamp: serverTimestamp()
-      });
-    }
-    
+    const pinRef = doc(db, "pinned_messages", id);
+    if (isCurrentlyPinned) { batch.delete(pinRef); } 
+    else { batch.set(pinRef, { originalId: id, collection: currentPage, text: text, pinnedBy: currentUserId, timestamp: serverTimestamp() }); }
     await batch.commit();
-  } catch (e) {
-    console.error('Pin error:', e);
-    showToast("Failed to pin message. Check Admin permissions.", "error");
-  }
+  } catch (e) { console.error(e); alert("Failed to pin. Check Admin permissions."); }
 }
 
-/**
- * Toggle ban status of a user
- */
 async function toggleBanUser() {
-  if (!state.currentContextMenuData || !state.db) return;
-  
-  const { userId, username } = state.currentContextMenuData;
-  
-  if (userId === state.currentUserId) {
-    showToast("You cannot ban yourself.", "error");
-    hideDropdownMenu();
-    return;
-  }
+  if (!currentContextMenuData || !db) return;
+  const { userId, username } = currentContextMenuData;
+  if (userId === currentUserId) { alert("You cannot ban yourself."); return; }
 
-  const userProfile = state.userProfiles[userId] || {};
+  const userProfile = userProfiles[userId] || {};
   const isBanned = userProfile.banned === true;
   const action = isBanned ? "UNBAN" : "BAN";
-  const safeUsername = sanitizeText(username || 'this user');
 
-  if (confirm(`Are you sure you want to ${action} ${safeUsername}?`)) {
+  if (confirm(`Are you sure you want to ${action} ${username}?`)) {
     hideDropdownMenu();
-    
     try {
-      const batch = writeBatch(state.db);
-      const userRef = doc(state.db, "users", userId);
-      
+      const batch = writeBatch(db);
+      const userRef = doc(db, "users", userId);
       batch.set(userRef, { banned: !isBanned }, { merge: true });
-      
-      const banRef = doc(state.db, "banned_users", userId);
-      if (isBanned) {
-        batch.delete(banRef);
-      } else {
-        batch.set(banRef, {
-          bannedBy: state.currentUserId,
-          timestamp: serverTimestamp(),
-          reason: "Admin Action",
-          username: username?.substring(0, 30) || 'Unknown'
-        });
-      }
-      
+      const banRef = doc(db, "banned_users", userId);
+      if (isBanned) { batch.delete(banRef); } 
+      else { batch.set(banRef, { bannedBy: currentUserId, timestamp: serverTimestamp(), reason: "Admin Action", username: username }); }
       await batch.commit();
-      showToast(`User has been ${isBanned ? "UNBANNED" : "BANNED"}.`, "info");
-    } catch (e) {
-      console.error('Ban error:', e);
-      showToast(`Failed to ${action} user.`, "error");
-    }
-  } else {
-    hideDropdownMenu();
-  }
+      alert(`User ${username} has been ${isBanned ? "UNBANNED" : "BANNED"}.`);
+    } catch (e) { alert(`Failed to ${action} user.`); console.error(e); }
+  } else { hideDropdownMenu(); }
 }
 
-// ============================================================
-// FIREBASE INITIALIZATION
-// ============================================================
-
-/**
- * Initialize Firebase and authentication
- */
+// *** INIT FIREBASE & AUTH ***
 async function initFirebase() {
   try {
-    state.app = initializeApp(firebaseConfig);
-
-    try {
-      initializeAppCheck(state.app, {
-        provider: new ReCaptchaEnterpriseProvider('6Ldv2yYsAAAAAJhp5E6hovquodb8WoS9thyDA6hE'),
-        isTokenAutoRefreshEnabled: true
-      });
-    } catch (appCheckError) {
-      console.warn('App Check initialization failed:', appCheckError);
-    }
-
-    state.db = getFirestore(state.app);
+    app = initializeApp(firebaseConfig);
     
-    try {
-      await enableIndexedDbPersistence(state.db);
-    } catch (err) {
-      if (err.code === 'failed-precondition') {
-        console.warn('Persistence failed: Multiple tabs open');
-      } else if (err.code === 'unimplemented') {
-        console.warn('Persistence not available');
+    // *** ADDED: Initialize App Check with Enterprise Key ***
+    // This connects your app to the reCAPTCHA key you created
+    const appCheck = initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider('6Ldv2yYsAAAAAJhp5E6hovquodb8WoS9thyDA6hE'),
+      isTokenAutoRefreshEnabled: true
+    });
+    // *******************************************************
+
+    db = getFirestore(app);
+    auth = getAuth(app);
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        currentUserId = user.uid;
+        console.log("Logged in UID:", currentUserId);
+        
+        confessionsCollection = collection(db, "confessions");
+        chatCollection = collection(db, "chat");
+        typingStatusCollection = collection(db, "typingStatus");
+
+        registerServiceWorker();
+        setupNotificationButton();
+        setupAdminMenu();
+        
+        listenForUserProfiles();
+        listenForBanStatus(); 
+        
+        try { await checkAdminStatus(); } catch(e) { console.error("Admin check failed:", e); }
+        try { await loadUserProfile(); } catch(e) { console.error("Profile load failed:", e); }
+
+        initScrollObserver();
+        showPage(currentPage); 
+      } else {
+        try {
+            await signInAnonymously(auth);
+        } catch(e) {
+            console.error("Auth Failed:", e);
+            loading.textContent = "Error: Could not sign in. Enable Anonymous Auth in Firebase Console.";
+        }
       }
-    }
-
-    state.auth = getAuth(state.app);
-
-    onAuthStateChanged(state.auth, handleAuthStateChange);
+    });
 
   } catch (error) {
-    console.error("Error initializing Firebase:", error);
-    setTextSafely(loading, "Error: Could not initialize. Please refresh.");
-    throw error;
+    console.error("Error initializing:", error);
+    loading.textContent = "Error: Refresh page.";
   }
 }
 
-/**
- * Handle authentication state changes
- * @param {Object|null} user - Firebase user object
- */
-async function handleAuthStateChange(user) {
-  if (user) {
-    state.currentUserId = user.uid;
-    console.log("Authenticated with UID:", state.currentUserId);
-
-    state.confessionsCollection = collection(state.db, "confessions");
-    state.chatCollection = collection(state.db, "chat");
-    state.typingStatusCollection = collection(state.db, "typingStatus");
-
-    registerServiceWorker();
-    setupNotificationButton();
-    setupAdminMenu();
-
-    listenForUserProfiles();
-    listenForBanStatus();
-
-    try {
-      await checkAdminStatus();
-    } catch (e) {
-      console.error("Admin check failed:", e);
-    }
-
-    try {
-      await loadUserProfile();
-    } catch (e) {
-      console.error("Profile load failed:", e);
-    }
-
-    initScrollObserver();
-    showPage(state.currentPage);
-    state.isInitialized = true;
-    
-  } else {
-    try {
-      await signInAnonymously(state.auth);
-    } catch (e) {
-      console.error("Anonymous auth failed:", e);
-      setTextSafely(loading, "Error: Could not sign in. Please refresh.");
-    }
-  }
-}
-
-/**
- * Check if current user is an admin
- */
+// SECURITY NOTE: This client-side admin check is for UI purposes only (defense-in-depth).
+// Actual admin permissions MUST be enforced in Firebase Security Rules.
+// Never trust client-side isCurrentUserAdmin for sensitive operations.
 async function checkAdminStatus() {
-  if (!state.currentUserId || !state.db) return;
-  
-  try {
-    const adminDocRef = doc(state.db, "admins", state.currentUserId);
-    const adminDocSnap = await getDoc(adminDocRef);
-    state.isCurrentUserAdmin = adminDocSnap.exists();
-    
-    if (state.isCurrentUserAdmin) {
-      console.log("Admin privileges active");
-    }
-  } catch (e) {
-    console.error("Admin check error:", e);
-    state.isCurrentUserAdmin = false;
-  }
+  if (!currentUserId || !db) return;
+  const adminDocRef = doc(db, "admins", currentUserId);
+  const adminDocSnap = await getDoc(adminDocRef);
+  if (adminDocSnap.exists()) { isCurrentUserAdmin = true; console.log("Admin Active"); } 
+  else { isCurrentUserAdmin = false; }
 }
 
-// ============================================================
-// PINNED MESSAGES
-// ============================================================
-
-/**
- * Listen for pinned messages in current collection
- */
+// *** FIXED PINNED LISTENER (Client-Side Filtering) ***
 function listenForPinnedMessages() {
-  if (unsubscribers.pinned) {
-    unsubscribers.pinned();
-  }
-
+  if (unsubscribePinned) unsubscribePinned();
+  
+  // We query ALL pins (sorted by newest) and filter in JS.
+  // This avoids the "Missing Index" error completely.
   const q = query(
-    collection(state.db, "pinned_messages"),
-    orderBy("timestamp", "desc")
+      collection(db, "pinned_messages"), 
+      orderBy("timestamp", "desc")
   );
 
-  unsubscribers.pinned = onSnapshot(q, (snapshot) => {
-    const matchingPin = snapshot.docs.find(doc => 
-      doc.data().collection === state.currentPage
-    );
+  unsubscribePinned = onSnapshot(q, (snapshot) => {
+    // Find the first pin that belongs to the CURRENT page (chat vs confessions)
+    const matchingPin = snapshot.docs.find(doc => doc.data().collection === currentPage);
 
     if (matchingPin) {
       const data = matchingPin.data();
       pinnedMessageBar.classList.remove("hidden");
-      pinnedMessageBar.style.display = "flex";
-      setTextSafely(pinnedMessageText, data.text);
-
+      pinnedMessageText.textContent = data.text;
+      
       pinnedMessageBar.onclick = () => {
-        const escapedId = escapeSelector(data.originalId);
-        const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
-        if (bubble) {
-          bubble.scrollIntoView({ behavior: "smooth", block: "center" });
-          bubble.classList.add("ring-2", "ring-yellow-400");
-          setTimeout(() => {
-            bubble.classList.remove("ring-2", "ring-yellow-400");
-          }, 2000);
+        const bubble = document.querySelector(`.message-bubble[data-id="${data.originalId}"]`);
+        if (bubble) { 
+            bubble.scrollIntoView({ behavior: "smooth", block: "center" }); 
+            bubble.classList.add("ring-2", "ring-yellow-400"); 
+            setTimeout(() => bubble.classList.remove("ring-2", "ring-yellow-400"), 2000); 
         }
       };
-    } else {
-      pinnedMessageBar.classList.add("hidden");
-      pinnedMessageBar.style.display = "none";
+    } else { 
+      pinnedMessageBar.classList.add("hidden"); 
     }
   }, (error) => {
-    console.warn("Pinned messages listener error:", error);
-    pinnedMessageBar.classList.add("hidden");
+      console.log("Pinned fetch warning:", error);
   });
 }
 
-// ============================================================
-// BAN STATUS
-// ============================================================
-
-/**
- * Listen for ban status changes
- */
+// SECURITY NOTE: This client-side ban check is for UX only (defense-in-depth).
+// Actual ban enforcement MUST be in Firebase Security Rules to block write/read access.
+// A determined attacker can bypass this client-side check via DevTools.
 function listenForBanStatus() {
-  if (unsubscribers.banCheck) {
-    unsubscribers.banCheck();
-  }
-  
-  if (!state.currentUserId || !state.db) return;
-
-  unsubscribers.banCheck = onSnapshot(
-    doc(state.db, "banned_users", state.currentUserId), 
-    (docSnap) => {
-      if (docSnap.exists()) {
-        state.isBanned = true;
-        state.userProfiles = {};
-        
-        Object.values(unsubscribers).forEach(unsub => {
-          if (typeof unsub === 'function') unsub();
-        });
-        
-        showBannedScreen();
-      }
-    },
-    (error) => {
-      console.warn("Ban check error:", error);
+  if (unsubscribeBanCheck) unsubscribeBanCheck();
+  unsubscribeBanCheck = onSnapshot(doc(db, "banned_users", currentUserId), (docSnap) => {
+    if (docSnap.exists()) {
+      document.body.innerHTML = `<div class="flex flex-col items-center justify-center h-screen bg-black text-red-600 font-bold gap-4"><h1 class="text-3xl">🚫 ACCESS DENIED</h1><p>You have been banned.</p></div>`;
     }
-  );
+  });
 }
 
-/**
- * Show banned user screen
- */
-function showBannedScreen() {
-  document.body.innerHTML = '';
-  document.body.className = 'banned-overlay';
-  
-  const h1 = document.createElement('h1');
-  h1.className = "text-3xl";
-  h1.textContent = "🚫 ACCESS DENIED";
-  
-  const p = document.createElement('p');
-  p.textContent = "You have been banned from Konvo.";
-  
-  document.body.appendChild(h1);
-  document.body.appendChild(p);
-}
-
-// ============================================================
-// SCROLL OBSERVER
-// ============================================================
-
-/**
- * Initialize intersection observer for scroll tracking
- */
 function initScrollObserver() {
-  const options = { 
-    root: feedContainer, 
-    rootMargin: "100px", 
-    threshold: 0.1 
-  };
-  
-  state.bottomObserver = new IntersectionObserver((entries) => {
+  const options = { root: feedContainer, rootMargin: "100px", threshold: 0.1 };
+  bottomObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
-      state.userIsAtBottom = entry.isIntersecting;
+      userIsAtBottom = entry.isIntersecting;
       updateScrollButton();
     });
   }, options);
 }
 
-/**
- * Update scroll to bottom button visibility
- */
 function updateScrollButton() {
-  if (state.userIsAtBottom) {
+  if (userIsAtBottom) {
     scrollToBottomBtn.classList.add("hidden");
     scrollToBottomBtn.style.display = "";
     newMsgCount.classList.add("hidden");
-    state.unreadMessages = 0;
+    unreadMessages = 0;
   } else {
     scrollToBottomBtn.classList.remove("hidden");
     scrollToBottomBtn.style.display = "flex";
-    
-    if (state.unreadMessages > 0) {
+    if (unreadMessages > 0) {
       newMsgCount.classList.remove("hidden");
-      setTextSafely(newMsgCount, 
-        state.unreadMessages > 99 ? "99+" : String(state.unreadMessages)
-      );
+      newMsgCount.textContent = unreadMessages > 99 ? "99+" : unreadMessages;
     } else {
       newMsgCount.classList.add("hidden");
     }
   }
 }
 
-/**
- * Scroll to bottom of feed
- */
-function scrollToBottom() {
-  if (!feedContainer) return;
-  
-  feedContainer.scrollTop = feedContainer.scrollHeight;
-  state.userIsAtBottom = true;
-  state.unreadMessages = 0;
-  updateScrollButton();
-}
-
-// ============================================================
-// USER PROFILES
-// ============================================================
-
-/**
- * Listen for user profile changes
- */
 function listenForUserProfiles() {
-  if (unsubscribers.userProfiles) {
-    unsubscribers.userProfiles();
-  }
-
-  unsubscribers.userProfiles = onSnapshot(
-    collection(state.db, "users"), 
-    (snapshot) => {
-      snapshot.docs.forEach((docSnap) => {
-        state.userProfiles[docSnap.id] = docSnap.data();
-      });
-    },
-    (error) => {
-      console.error("User profiles listener error:", error);
-    }
-  );
-}
-
-/**
- * Load current user's profile
- */
-async function loadUserProfile() {
-  if (!state.db || !state.currentUserId) return;
-  
-  try {
-    const userDoc = await getDoc(doc(state.db, "users", state.currentUserId));
-    
-    if (userDoc.exists()) {
-      const data = userDoc.data();
-      
-      if (data.banned) {
-        showBannedScreen();
-        throw new Error("User Banned");
-      }
-      
-      state.currentUsername = data.username || "Anonymous";
-      
-      const pfp = data.profilePhotoURL;
-      if (pfp && isValidProfilePhotoURL(pfp)) {
-        state.currentProfilePhotoURL = pfp;
-      } else {
-        state.currentProfilePhotoURL = null;
-      }
-    }
-    
-    if (modalUsernameInput) {
-      modalUsernameInput.value = state.currentUsername === "Anonymous" 
-        ? "" 
-        : state.currentUsername;
-    }
-    
-  } catch (error) {
-    console.error("Load profile error:", error);
-    throw error;
-  }
-}
-
-/**
- * Handle profile save
- */
-async function handleProfileSave() {
-  if (!state.db || !state.currentUserId) return;
-  
-  const inputVal = modalUsernameInput.value.trim();
-  
-  if (!isValidUsername(inputVal)) {
-    showToast("Invalid username. Use letters, numbers, underscores, hyphens, and spaces only (1-30 characters).", "error");
-    modalUsernameInput.classList.add("error");
-    setTimeout(() => modalUsernameInput.classList.remove("error"), 500);
-    return;
-  }
-  
-  modalSaveButton.textContent = "CHECKING...";
-  modalSaveButton.disabled = true;
-  modalSaveButton.classList.add("loading");
-  
-  try {
-    const q = query(
-      collection(state.db, "users"), 
-      where("username", "==", inputVal)
-    );
-    const querySnapshot = await getDocs(q);
-    
-    let isTaken = false;
-    querySnapshot.forEach((docSnapshot) => {
-      if (docSnapshot.id !== state.currentUserId) {
-        isTaken = true;
-      }
-    });
-    
-    if (isTaken) {
-      showToast("Username is already taken!", "error");
-      modalSaveButton.textContent = "SAVE";
-      modalSaveButton.disabled = false;
-      modalSaveButton.classList.remove("loading");
-      return;
-    }
-    
-    modalSaveButton.textContent = "SAVING...";
-    
-    const firstLetter = inputVal.charAt(0).toUpperCase();
-    const newProfilePhotoURL = `https://placehold.co/32x32/000000/ffffff?text=${encodeURIComponent(firstLetter)}`;
-    
-    await setDoc(doc(state.db, "users", state.currentUserId), {
-      username: inputVal,
-      profilePhotoURL: newProfilePhotoURL,
-    }, { merge: true });
-    
-    state.currentUsername = inputVal;
-    state.currentProfilePhotoURL = newProfilePhotoURL;
-    
-    closeProfileModal();
-    
-  } catch (error) {
-    console.error("Error saving profile:", error);
-    showToast("Error saving profile. Please try again.", "error");
-  } finally {
-    modalSaveButton.textContent = "SAVE";
-    modalSaveButton.disabled = false;
-    modalSaveButton.classList.remove("loading");
-  }
-}
-
-// ============================================================
-// MODAL FUNCTIONS
-// ============================================================
-
-/**
- * Open profile modal
- */
-function openProfileModal() {
-  if (!modalUsernameInput || !profileModal) return;
-  
-  modalUsernameInput.value = state.currentUsername === "Anonymous" 
-    ? "" 
-    : state.currentUsername;
-  
-  profileModal.classList.add("is-open");
-  profileModal.setAttribute("aria-hidden", "false");
-  
-  setTimeout(() => modalUsernameInput.focus(), 100);
-}
-
-/**
- * Close profile modal
- */
-function closeProfileModal() {
-  if (!profileModal) return;
-  
-  profileModal.classList.remove("is-open");
-  profileModal.setAttribute("aria-hidden", "true");
-}
-
-/**
- * Show edit message modal
- * @param {string} docId - Document ID
- * @param {string} collectionName - Collection name
- * @param {string} currentText - Current message text
- */
-function showEditModal(docId, collectionName, currentText) {
-  if (!editModal || !modalEditTextArea) return;
-  
-  state.docToEditId = docId;
-  state.collectionToEdit = collectionName;
-  modalEditTextArea.value = currentText || '';
-  
-  editModal.classList.add("is-open");
-  editModal.setAttribute("aria-hidden", "false");
-  
-  setTimeout(() => {
-    modalEditTextArea.focus();
-    modalEditTextArea.setSelectionRange(
-      modalEditTextArea.value.length, 
-      modalEditTextArea.value.length
-    );
-  }, 100);
-}
-
-/**
- * Close edit modal
- */
-function closeEditModal() {
-  if (!editModal) return;
-  
-  editModal.classList.remove("is-open");
-  editModal.setAttribute("aria-hidden", "true");
-  state.docToEditId = null;
-  state.collectionToEdit = null;
-}
-
-/**
- * Save edited message
- */
-async function saveEdit() {
-  const newText = modalEditTextArea.value.trim();
-  
-  if (!isValidMessageText(newText)) {
-    showToast("Message must be 1-2000 characters.", "error");
-    return;
-  }
-  
-  if (!state.docToEditId || !state.db) return;
-  
-  editModalSaveButton.textContent = "SAVING...";
-  editModalSaveButton.disabled = true;
-  editModalSaveButton.classList.add("loading");
-  
-  try {
-    await updateDoc(doc(state.db, state.collectionToEdit, state.docToEditId), {
-      text: newText,
-      edited: true
-    });
-    
-    closeEditModal();
-  } catch (e) {
-    console.error('Edit error:', e);
-    showToast("Error: You can only edit your own messages.", "error");
-  } finally {
-    editModalSaveButton.textContent = "SAVE";
-    editModalSaveButton.disabled = false;
-    editModalSaveButton.classList.remove("loading");
-  }
-}
-
-/**
- * Show confirmation modal
- * @param {string} text - Confirmation text
- * @param {boolean} isMine - Whether message belongs to current user
- * @param {string} docId - Document ID
- */
-function showConfirmModal(text, isMine, docId) {
-  if (!confirmModal || !confirmModalActionContainer) return;
-  
-  setTextSafely(confirmModalText, text);
-  confirmModalActionContainer.innerHTML = '';
-  
-  const isAdmin = state.isCurrentUserAdmin;
-  
-  if (isMine || isAdmin) {
-    const btnForMe = document.createElement('button');
-    btnForMe.type = 'button';
-    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm border border-white text-white hover:bg-white hover:text-black transition";
-    btnForMe.textContent = "FOR ME";
-    btnForMe.onclick = async () => {
-      closeConfirmModal();
-      try {
-        await updateDoc(doc(state.db, state.currentPage, docId), { 
-          hiddenFor: arrayUnion(state.currentUserId) 
-        });
-      } catch (e) {
-        console.error('Hide error:', e);
-      }
-    };
-    
-    const btnEveryone = document.createElement('button');
-    btnEveryone.type = 'button';
-    btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600 transition";
-    btnEveryone.textContent = isAdmin && !isMine ? "NUKE (ADMIN)" : "EVERYONE";
-    btnEveryone.onclick = async () => {
-      closeConfirmModal();
-      try {
-        await deleteDoc(doc(state.db, state.currentPage, docId));
-      } catch (e) {
-        console.error('Delete error:', e);
-        showToast("Permission denied.", "error");
-      }
-    };
-    
-    confirmModalActionContainer.appendChild(btnForMe);
-    confirmModalActionContainer.appendChild(btnEveryone);
-  } else {
-    const btnForMe = document.createElement('button');
-    btnForMe.type = 'button';
-    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 transition";
-    btnForMe.textContent = "HIDE";
-    btnForMe.onclick = async () => {
-      closeConfirmModal();
-      try {
-        await updateDoc(doc(state.db, state.currentPage, docId), { 
-          hiddenFor: arrayUnion(state.currentUserId) 
-        });
-      } catch (e) {
-        console.error("Hide failed:", e);
-      }
-    };
-    
-    confirmModalActionContainer.appendChild(btnForMe);
-  }
-  
-  confirmModal.classList.add("is-open");
-  confirmModal.setAttribute("aria-hidden", "false");
-}
-
-/**
- * Close confirmation modal
- */
-function closeConfirmModal() {
-  if (!confirmModal) return;
-  
-  confirmModal.classList.remove("is-open");
-  confirmModal.setAttribute("aria-hidden", "true");
-}
-
-// ============================================================
-// REACTIONS
-// ============================================================
-
-/**
- * Toggle reaction on a message
- * @param {string} docId - Document ID
- * @param {string} collectionName - Collection name
- * @param {string} reactionType - Type of reaction
- * @param {boolean} hasReacted - Whether user already reacted
- */
-async function toggleReaction(docId, collectionName, reactionType, hasReacted) {
-  if (!state.db || !state.currentUserId) return;
-  
-  if (!Object.prototype.hasOwnProperty.call(REACTION_TYPES, reactionType)) {
-    return;
-  }
-  
-  const docRef = doc(state.db, collectionName, docId);
-  const reactionField = `reactions.${reactionType}`;
-  
-  try {
-    if (hasReacted) {
-      await updateDoc(docRef, { 
-        [reactionField]: arrayRemove(state.currentUserId) 
-      });
-    } else {
-      await updateDoc(docRef, { 
-        [reactionField]: arrayUnion(state.currentUserId) 
-      });
-    }
-  } catch (error) {
-    console.error("Error toggling reaction:", error);
-  }
-}
-
-// ============================================================
-// CONTEXT MENU
-// ============================================================
-
-/**
- * Show dropdown context menu
- * @param {Event} event - Click event
- * @param {Object} data - Message data
- */
-function showDropdownMenu(event, data) {
-  event.stopPropagation();
-  
-  if (contextMenu.classList.contains("is-open") && 
-      state.currentContextMenuData?.id === data.id) {
-    hideDropdownMenu();
-    return;
-  }
-  
-  state.currentContextMenuData = { ...data };
-  
-  const now = Date.now();
-  const messageTime = parseInt(data.timestamp, 10);
-  const isRecent = isNaN(messageTime) ? true : (now - messageTime < 900000);
-  const isMine = data.isMine === "true";
-  const isAdmin = state.isCurrentUserAdmin;
-  
-  if (menuEdit) {
-    menuEdit.style.display = isRecent && isMine ? "block" : "none";
-  }
-  if (menuDelete) {
-    menuDelete.style.display = "block";
-  }
-  
-  if (menuPin) {
-    menuPin.style.display = isAdmin ? "block" : "none";
-    menuPin.textContent = data.isPinned === "true" 
-      ? "Unpin Message" 
-      : "Pin Message 📌";
-  }
-  
-  if (menuBan) {
-    menuBan.style.display = (isAdmin && !isMine) ? "block" : "none";
-    const userProfile = state.userProfiles[data.userId] || {};
-    const isBanned = userProfile.banned === true;
-    menuBan.textContent = isBanned ? "Unban User ✅" : "Ban User 🚫";
-    menuBan.className = isBanned
-      ? "text-green-500 hover:text-green-400 font-bold border-t border-[#333] mt-1 pt-1"
-      : "text-red-500 hover:text-red-400 font-bold border-t border-[#333] mt-1 pt-1";
-  }
-  
-  const rect = event.currentTarget.getBoundingClientRect();
-  const menuWidth = 150;
-  
-  let left = isMine ? rect.right - menuWidth : rect.left;
-  
-  if (left < 10) left = 10;
-  if (left + menuWidth > window.innerWidth - 10) {
-    left = window.innerWidth - menuWidth - 10;
-  }
-  
-  contextMenu.style.top = `${rect.bottom + 2}px`;
-  contextMenu.style.left = `${left}px`;
-  contextMenu.classList.add("is-open");
-}
-
-/**
- * Hide dropdown menu
- */
-function hideDropdownMenu() {
-  if (contextMenu) {
-    contextMenu.classList.remove("is-open");
-  }
-}
-
-// ============================================================
-// SELECTION MODE
-// ============================================================
-
-/**
- * Handle message click in selection mode
- * @param {HTMLElement} bubble - Message bubble element
- */
-function handleMessageClick(bubble) {
-  if (!state.isSelectionMode) return;
-  
-  const docId = bubble.dataset.id;
-  
-  if (state.selectedMessages.has(docId)) {
-    state.selectedMessages.delete(docId);
-    bubble.classList.remove("selected-message");
-  } else {
-    state.selectedMessages.add(docId);
-    bubble.classList.add("selected-message");
-  }
-  
-  updateSelectionBar();
-}
-
-/**
- * Enter selection mode
- */
-function enterSelectionMode() {
-  state.isSelectionMode = true;
-  document.body.classList.add("selection-mode");
-  
-  if (selectionBar) {
-    selectionBar.classList.remove("hidden");
-    selectionBar.style.display = "flex";
-  }
-  
-  if (chatForm) chatForm.classList.add("hidden");
-  if (confessionForm) confessionForm.classList.add("hidden");
-  
-  if (state.currentContextMenuData) {
-    const docId = state.currentContextMenuData.id;
-    state.selectedMessages.add(docId);
-    
-    const escapedId = escapeSelector(docId);
-    const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
-    if (bubble) {
-      bubble.classList.add("selected-message");
-    }
-  }
-  
-  updateSelectionBar();
-}
-
-/**
- * Exit selection mode
- */
-function exitSelectionMode() {
-  state.isSelectionMode = false;
-  document.body.classList.remove("selection-mode");
-  
-  if (selectionBar) {
-    selectionBar.classList.add("hidden");
-  }
-  
-  state.selectedMessages.clear();
-  
-  if (state.currentPage === "chat") {
-    if (chatForm) {
-      chatForm.classList.remove("hidden");
-      chatForm.classList.add("flex");
-    }
-  } else {
-    if (confessionForm) {
-      confessionForm.classList.remove("hidden");
-      confessionForm.classList.add("flex");
-    }
-  }
-  
-  document.querySelectorAll(".selected-message").forEach(el => {
-    el.classList.remove("selected-message");
+  unsubscribeUserProfiles = onSnapshot(collection(db, "users"), (snapshot) => {
+    snapshot.docs.forEach((docSnap) => { userProfiles[docSnap.id] = docSnap.data(); });
   });
 }
 
-/**
- * Update selection bar count
- */
-function updateSelectionBar() {
-  const count = state.selectedMessages.size;
-  setTextSafely(selectionCount, `${count} selected`);
-  
-  if (count === 0 && state.isSelectionMode) {
-    exitSelectionMode();
+async function loadUserProfile() {
+  if (!db || !currentUserId) return;
+  const userDoc = await getDoc(doc(db, "users", currentUserId));
+  if (userDoc.exists()) {
+    const data = userDoc.data();
+    currentUsername = data.username || "Anonymous";
+    let pfp = data.profilePhotoURL;
+    currentProfilePhotoURL = (pfp && pfp.startsWith("http")) ? pfp : null;
+    if (data.banned) { document.body.innerHTML = "<div class='flex items-center justify-center h-screen text-red-500 font-bold'>YOU HAVE BEEN BANNED</div>"; throw new Error("User Banned"); }
+  }
+  modalUsernameInput.value = currentUsername === "Anonymous" ? "" : currentUsername;
+}
+
+async function handleProfileSave() {
+  if (!db || !currentUserId) return;
+  modalSaveButton.textContent = "CHECKING..."; modalSaveButton.disabled = true;
+  const inputVal = modalUsernameInput.value.trim();
+  if (!inputVal || inputVal.toLowerCase() === "anonymous") { alert("Invalid username."); modalSaveButton.textContent = "SAVE"; modalSaveButton.disabled = false; return; }
+  try {
+    const q = query(collection(db, "users"), where("username", "==", inputVal));
+    const querySnapshot = await getDocs(q);
+    let isTaken = false;
+    querySnapshot.forEach((doc) => { if (doc.id !== currentUserId) isTaken = true; });
+    if (isTaken) { alert("Username taken!"); modalSaveButton.textContent = "SAVE"; modalSaveButton.disabled = false; return; }
+    modalSaveButton.textContent = "SAVING...";
+    const firstLetter = inputVal.charAt(0).toUpperCase();
+    const newProfilePhotoURL = `https://placehold.co/32x32/000000/ffffff?text=${firstLetter}`;
+    await setDoc(doc(db, "users", currentUserId), { username: inputVal, profilePhotoURL: newProfilePhotoURL, }, { merge: true });
+    currentUsername = inputVal; currentProfilePhotoURL = newProfilePhotoURL;
+    closeProfileModal();
+  } catch (error) { console.error("Error saving profile: ", error); alert("Error saving profile."); } finally { modalSaveButton.textContent = "SAVE"; modalSaveButton.disabled = false; }
+}
+
+function openProfileModal() { modalUsernameInput.value = currentUsername === "Anonymous" ? "" : currentUsername; profileModal.classList.add("is-open"); }
+function closeProfileModal() { profileModal.classList.remove("is-open"); }
+function showEditModal(docId, collectionName, currentText) { docToEditId = docId; collectionToEdit = collectionName; modalEditTextArea.value = currentText; editModal.classList.add("is-open"); }
+function closeEditModal() { editModal.classList.remove("is-open"); docToEditId = null; }
+
+async function saveEdit() {
+  const newText = modalEditTextArea.value.trim();
+  if (newText && docToEditId) {
+    editModalSaveButton.textContent = "SAVING...";
+    try { await updateDoc(doc(db, collectionToEdit, docToEditId), { text: newText, edited: true }); closeEditModal(); } 
+    catch (e) { alert("Error: You can only edit your own messages."); }
+    editModalSaveButton.textContent = "SAVE";
   }
 }
 
-/**
- * Handle multi-message delete
- */
+function showConfirmModal(text, isMine, docId) {
+  confirmModalText.textContent = text;
+  confirmModalActionContainer.innerHTML = '';
+  const isAdmin = isCurrentUserAdmin;
+  if (isMine || isAdmin) {
+    const btnForMe = document.createElement('button'); btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm border border-white text-white hover:bg-white hover:text-black"; btnForMe.textContent = "FOR ME";
+    btnForMe.onclick = async () => { closeConfirmModal(); try { await updateDoc(doc(db, currentPage, docId), { hiddenFor: arrayUnion(currentUserId) }); } catch(e) { console.error(e); } };
+    const btnEveryone = document.createElement('button'); btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600"; btnEveryone.textContent = isAdmin && !isMine ? "NUKE (ADMIN)" : "EVERYONE";
+    btnEveryone.onclick = async () => { closeConfirmModal(); try { await deleteDoc(doc(db, currentPage, docId)); } catch (e) { alert("Permission denied."); } };
+    confirmModalActionContainer.append(btnForMe, btnEveryone);
+  } else {
+    const btnForMe = document.createElement('button'); btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500"; btnForMe.textContent = "HIDE";
+    btnForMe.onclick = async () => { closeConfirmModal(); try { await updateDoc(doc(db, currentPage, docId), { hiddenFor: arrayUnion(currentUserId) }); } catch(e) { console.error("Hide failed:", e); } };
+    confirmModalActionContainer.appendChild(btnForMe);
+  }
+  confirmModal.classList.add("is-open");
+}
+function closeConfirmModal() { confirmModal.classList.remove("is-open"); }
+
+async function toggleReaction(docId, collectionName, reactionType, hasReacted) {
+  if (!db || !currentUserId) return;
+  const docRef = doc(db, collectionName, docId);
+  const reactionField = `reactions.${reactionType}`;
+  try {
+    if (hasReacted) await updateDoc(docRef, { [reactionField]: arrayRemove(currentUserId) });
+    else await updateDoc(docRef, { [reactionField]: arrayUnion(currentUserId) });
+  } catch (error) { console.error("Error toggling reaction:", error); }
+}
+
+function showDropdownMenu(event, data) {
+  event.stopPropagation();
+  if (contextMenu.classList.contains("is-open") && currentContextMenuData && currentContextMenuData.id === data.id) { hideDropdownMenu(); return; }
+  currentContextMenuData = data;
+  const now = Date.now();
+  const messageTime = parseInt(currentContextMenuData.timestamp, 10);
+  const isRecent = isNaN(messageTime) ? true : (now - messageTime < 900000);
+  const isMine = currentContextMenuData.isMine === "true";
+  const isAdmin = isCurrentUserAdmin;
+  menuEdit.style.display = isRecent && isMine ? "block" : "none";
+  menuDelete.style.display = "block";
+  if (menuPin) { menuPin.style.display = isAdmin ? "block" : "none"; menuPin.textContent = data.isPinned === "true" ? "Unpin Message" : "Pin Message 📌"; }
+  if (menuBan) { 
+      menuBan.style.display = (isAdmin && !isMine) ? "block" : "none"; 
+      const userProfile = userProfiles[data.userId] || {};
+      const isBanned = userProfile.banned === true;
+      menuBan.textContent = isBanned ? "Unban User ✅" : "Ban User 🚫";
+      menuBan.className = isBanned ? "text-green-500 hover:text-green-400 font-bold border-t border-[#333] mt-1 pt-1" : "text-red-500 hover:text-red-400 font-bold border-t border-[#333] mt-1 pt-1";
+  }
+  const rect = event.currentTarget.getBoundingClientRect();
+  contextMenu.style.top = `${rect.bottom + 2}px`; contextMenu.style.left = isMine ? `${rect.right - 150}px` : `${rect.left}px`;
+  contextMenu.classList.add("is-open");
+}
+function hideDropdownMenu() { contextMenu.classList.remove("is-open"); }
+function handleMessageClick(bubble) { if (!isSelectionMode) return; const docId = bubble.dataset.id; if (selectedMessages.has(docId)) { selectedMessages.delete(docId); bubble.classList.remove("selected-message"); } else { selectedMessages.add(docId); bubble.classList.add("selected-message"); } updateSelectionBar(); }
+function enterSelectionMode() { isSelectionMode = true; document.body.classList.add("selection-mode"); selectionBar.classList.remove("hidden"); chatForm.classList.add("hidden"); confessionForm.classList.add("hidden"); if (currentContextMenuData) { const docId = currentContextMenuData.id; selectedMessages.add(docId); const bubble = document.querySelector(`.message-bubble[data-id="${docId}"]`); if (bubble) bubble.classList.add("selected-message"); } updateSelectionBar(); }
+function exitSelectionMode() { isSelectionMode = false; document.body.classList.remove("selection-mode"); selectionBar.classList.add("hidden"); selectedMessages.clear(); if (currentPage === "chat") { chatForm.classList.remove("hidden"); chatForm.classList.add("flex"); } else { confessionForm.classList.remove("hidden"); confessionForm.classList.add("flex"); } document.querySelectorAll(".selected-message").forEach(el => el.classList.remove("selected-message")); }
+function updateSelectionBar() { const count = selectedMessages.size; selectionCount.textContent = `${count} selected`; if (count === 0 && isSelectionMode) exitSelectionMode(); }
+
+// *** UPDATED MULTI-DELETE FUNCTION ***
 async function handleMultiDelete() {
-  const count = state.selectedMessages.size;
+  const count = selectedMessages.size;
   if (count === 0) return;
 
   let allMine = true;
-  state.selectedMessages.forEach(id => {
-    const escapedId = escapeSelector(id);
-    const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
+  selectedMessages.forEach(id => {
+    const bubble = document.querySelector(`.message-bubble[data-id="${id}"]`);
     if (bubble && bubble.dataset.isMine !== "true") {
       allMine = false;
     }
   });
 
-  const isAdmin = state.isCurrentUserAdmin;
+  const isAdmin = isCurrentUserAdmin;
   const canDeleteEveryone = isAdmin || allMine;
 
-  setTextSafely(confirmModalText, `Delete ${count} message${count > 1 ? 's' : ''}?`);
-  
-  if (confirmModalActionContainer) {
-    confirmModalActionContainer.innerHTML = '';
+  confirmModalText.textContent = `Delete ${count} message${count > 1 ? 's' : ''}?`;
+  confirmModalActionContainer.innerHTML = ''; 
 
-    const btnForMe = document.createElement('button');
-    btnForMe.type = 'button';
-    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm border border-white text-white hover:bg-white hover:text-black transition";
-    btnForMe.textContent = "FOR ME";
-    btnForMe.onclick = async () => {
+  // Option 1: For Me (Hide)
+  const btnForMe = document.createElement('button');
+  btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm border border-white text-white hover:bg-white hover:text-black";
+  btnForMe.textContent = "FOR ME";
+  btnForMe.onclick = async () => {
       closeConfirmModal();
-      
-      const batch = writeBatch(state.db);
-      state.selectedMessages.forEach((docId) => {
-        const docRef = doc(state.db, state.currentPage, docId);
-        batch.update(docRef, { hiddenFor: arrayUnion(state.currentUserId) });
+      const batch = writeBatch(db);
+      selectedMessages.forEach((docId) => {
+          const docRef = doc(db, currentPage, docId);
+          batch.update(docRef, { hiddenFor: arrayUnion(currentUserId) });
       });
-      
-      try {
-        await batch.commit();
-      } catch (e) {
-        console.error('Batch hide error:', e);
-        showToast("Failed to hide messages.", "error");
-      }
-      
+      try { await batch.commit(); } 
+      catch (e) { console.error(e); alert("Failed to hide messages."); }
       exitSelectionMode();
-    };
-    
-    confirmModalActionContainer.appendChild(btnForMe);
+  };
+  confirmModalActionContainer.appendChild(btnForMe);
 
-    if (canDeleteEveryone) {
+  // Option 2: Everyone (Delete)
+  if (canDeleteEveryone) {
       const btnEveryone = document.createElement('button');
-      btnEveryone.type = 'button';
-      btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600 transition";
+      btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600";
       btnEveryone.textContent = "EVERYONE";
       btnEveryone.onclick = async () => {
-        closeConfirmModal();
-        
-        const batch = writeBatch(state.db);
-        state.selectedMessages.forEach((docId) => {
-          const docRef = doc(state.db, state.currentPage, docId);
-          batch.delete(docRef);
-        });
-        
-        try {
-          await batch.commit();
-        } catch (e) {
-          console.error('Batch delete error:', e);
-          showToast("Failed to delete messages.", "error");
-        }
-        
-        exitSelectionMode();
+          closeConfirmModal();
+          const batch = writeBatch(db);
+          selectedMessages.forEach((docId) => {
+              const docRef = doc(db, currentPage, docId);
+              batch.delete(docRef);
+          });
+          try { await batch.commit(); } 
+          catch (e) { console.error(e); alert("Failed to delete messages."); }
+          exitSelectionMode();
       };
-      
       confirmModalActionContainer.appendChild(btnEveryone);
-    }
   }
 
-  if (confirmModal) {
-    confirmModal.classList.add("is-open");
-    confirmModal.setAttribute("aria-hidden", "false");
-  }
+  confirmModal.classList.add("is-open");
 }
 
-// ============================================================
-// PAGE NAVIGATION
-// ============================================================
+function scrollToBottom() { feedContainer.scrollTop = feedContainer.scrollHeight; userIsAtBottom = true; unreadMessages = 0; updateScrollButton(); }
 
-/**
- * Show specified page (chat or confessions)
- * @param {string} page - Page name
- */
 function showPage(page) {
-  if (page !== 'chat' && page !== 'confessions') {
-    page = 'chat';
-  }
-  
-  state.currentPage = page;
-  
-  if (state.isSelectionMode) exitSelectionMode();
+  currentPage = page;
+  if (isSelectionMode) exitSelectionMode();
   cancelReplyMode();
+  unsubscribeConfessions(); unsubscribeChat(); unsubscribeTypingStatus();
+  typingIndicator.innerHTML = "&nbsp;";
+  unreadMessages = 0; newMsgCount.classList.add("hidden");
+  scrollToBottomBtn.classList.add("hidden"); scrollToBottomBtn.style.display = "";
   
-  unsubscribers.confessions();
-  unsubscribers.chat();
-  unsubscribers.typingStatus();
-  
-  if (typingIndicator) typingIndicator.innerHTML = "&nbsp;";
-  state.unreadMessages = 0;
-  
-  if (newMsgCount) newMsgCount.classList.add("hidden");
-  if (scrollToBottomBtn) {
-    scrollToBottomBtn.classList.add("hidden");
-    scrollToBottomBtn.style.display = "";
-  }
-
-  listenForPinnedMessages();
+  listenForPinnedMessages(); 
 
   if (page === "confessions") {
-    navConfessions?.classList.add("active");
-    navConfessions?.setAttribute("aria-pressed", "true");
-    navChat?.classList.remove("active");
-    navChat?.setAttribute("aria-pressed", "false");
-    
-    if (confessionForm) {
-      confessionForm.classList.add("flex");
-      confessionForm.classList.remove("hidden");
-    }
-    if (chatForm) {
-      chatForm.classList.add("hidden");
-      chatForm.classList.remove("flex");
-    }
-    if (typingIndicator) typingIndicator.classList.add("hidden");
-    
+    navConfessions.classList.add("active"); navChat.classList.remove("active");
+    confessionForm.classList.add("flex"); confessionForm.classList.remove("hidden");
+    chatForm.classList.add("hidden"); chatForm.classList.remove("flex");
+    typingIndicator.classList.add("hidden");
     listenForConfessions();
   } else {
-    navChat?.classList.add("active");
-    navChat?.setAttribute("aria-pressed", "true");
-    navConfessions?.classList.remove("active");
-    navConfessions?.setAttribute("aria-pressed", "false");
-    
-    if (chatForm) {
-      chatForm.classList.add("flex");
-      chatForm.classList.remove("hidden");
-    }
-    if (confessionForm) {
-      confessionForm.classList.add("hidden");
-      confessionForm.classList.remove("flex");
-    }
-    if (typingIndicator) typingIndicator.classList.remove("hidden");
-    
-    listenForChat();
-    listenForTyping();
+    navChat.classList.add("active"); navConfessions.classList.remove("active");
+    chatForm.classList.add("flex"); chatForm.classList.remove("hidden");
+    confessionForm.classList.add("hidden"); confessionForm.classList.remove("flex");
+    typingIndicator.classList.remove("hidden");
+    listenForChat(); listenForTyping();
   }
 }
 
-// ============================================================
-// REAL-TIME LISTENERS
-// ============================================================
+let lastConfessionDocs = [];
+let lastChatDocs = [];
 
-/**
- * Listen for confessions
- * @param {boolean} isRerender - Whether this is a re-render
- */
 function listenForConfessions(isRerender = false) {
-  if (isRerender) {
-    renderFeed(state.lastConfessionDocs, "confessions", null, true);
-    return;
-  }
-  
-  unsubscribers.chat();
-  
-  if (feedContainer) {
-    feedContainer.innerHTML = '';
-    const loadingDiv = document.createElement('div');
-    loadingDiv.id = 'loading';
-    loadingDiv.className = 'text-center p-4 text-[#888888] text-sm';
-    loadingDiv.textContent = 'LOADING CONFESSIONS...';
-    feedContainer.appendChild(loadingDiv);
-  }
-  
-  let isFirstSnapshot = true;
-  
-  unsubscribers.confessions = onSnapshot(
-    query(state.confessionsCollection, orderBy("timestamp", "asc")),
-    (snapshot) => {
-      state.lastConfessionDocs = snapshot.docs;
-      renderFeed(state.lastConfessionDocs, "confessions", snapshot, false, isFirstSnapshot);
-      isFirstSnapshot = false;
-    },
-    (error) => {
-      console.error('Confessions error:', error);
-      if (feedContainer) {
-        feedContainer.innerHTML = '';
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "text-center p-4 text-red-500";
-        errorDiv.textContent = "Error loading confessions: " + error.message;
-        feedContainer.appendChild(errorDiv);
-      }
-    }
-  );
+  if (isRerender) { renderFeed(lastConfessionDocs, "confessions", null, true); return; }
+  unsubscribeChat();
+  feedContainer.innerHTML = '<div id="loading" class="text-center p-4">LOADING CONFESSIONS...</div>';
+  let isFirstSnapshot = true; 
+  unsubscribeConfessions = onSnapshot(query(confessionsCollection, orderBy("timestamp", "asc")), (snapshot) => {
+      lastConfessionDocs = snapshot.docs;
+      renderFeed(lastConfessionDocs, "confessions", snapshot, false, isFirstSnapshot);
+      isFirstSnapshot = false; 
+  }, (error) => { 
+    // SECURITY: Use textContent for error messages to prevent injection
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "text-center p-4 text-red-500";
+    errorDiv.textContent = "Access Denied: " + error.message;
+    feedContainer.innerHTML = "";
+    feedContainer.appendChild(errorDiv);
+  });
 }
 
-/**
- * Listen for chat messages
- * @param {boolean} isRerender - Whether this is a re-render
- */
 function listenForChat(isRerender = false) {
-  if (isRerender) {
-    renderFeed(state.lastChatDocs, "chat", null, true);
-    return;
-  }
-  
-  unsubscribers.confessions();
-  
-  if (feedContainer) {
-    feedContainer.innerHTML = '';
-    const loadingDiv = document.createElement('div');
-    loadingDiv.id = 'loading';
-    loadingDiv.className = 'text-center p-4 text-[#888888] text-sm';
-    loadingDiv.textContent = 'LOADING CHAT...';
-    feedContainer.appendChild(loadingDiv);
-  }
-  
-  let isFirstSnapshot = true;
-  
-  unsubscribers.chat = onSnapshot(
-    query(state.chatCollection, orderBy("timestamp", "asc")),
-    (snapshot) => {
-      state.lastChatDocs = snapshot.docs;
-      renderFeed(state.lastChatDocs, "chat", snapshot, false, isFirstSnapshot);
-      isFirstSnapshot = false;
-    },
-    (error) => {
-      console.error('Chat error:', error);
-      if (feedContainer) {
-        feedContainer.innerHTML = '';
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "text-center p-4 text-red-500";
-        errorDiv.textContent = "Error loading chat: " + error.message;
-        feedContainer.appendChild(errorDiv);
-      }
-    }
-  );
+  if (isRerender) { renderFeed(lastChatDocs, "chat", null, true); return; }
+  unsubscribeConfessions();
+  feedContainer.innerHTML = '<div id="loading" class="text-center p-4">LOADING CHAT...</div>';
+  let isFirstSnapshot = true; 
+  unsubscribeChat = onSnapshot(query(chatCollection, orderBy("timestamp", "asc")), (snapshot) => {
+      lastChatDocs = snapshot.docs;
+      renderFeed(lastChatDocs, "chat", snapshot, false, isFirstSnapshot);
+      isFirstSnapshot = false; 
+  }, (error) => { 
+    // SECURITY: Use textContent for error messages to prevent injection
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "text-center p-4 text-red-500";
+    errorDiv.textContent = "Access Denied: " + error.message;
+    feedContainer.innerHTML = "";
+    feedContainer.appendChild(errorDiv);
+  });
 }
 
-/**
- * Listen for typing status
- */
 function listenForTyping() {
-  unsubscribers.typingStatus = onSnapshot(
-    state.typingStatusCollection, 
-    (snapshot) => {
-      const now = Date.now();
-      const typingUsers = [];
-      
-      snapshot.docs.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (data.isTyping && 
-            docSnap.id !== state.currentUserId && 
-            now - data.timestamp < 5000) {
-          const username = state.userProfiles[docSnap.id]?.username || "Someone";
-          typingUsers.push(username);
-        }
-      });
-      
-      if (typingIndicator) {
-        if (typingUsers.length === 0) {
-          typingIndicator.innerHTML = "&nbsp;";
-        } else if (typingUsers.length === 1) {
-          setTextSafely(typingIndicator, `${typingUsers[0]} is typing...`);
-        } else {
-          setTextSafely(typingIndicator, "Several users are typing...");
-        }
-      }
-    },
-    (error) => {
-      console.warn("Typing listener error:", error);
-    }
-  );
+  unsubscribeTypingStatus = onSnapshot(typingStatusCollection, (snapshot) => {
+    const now = Date.now();
+    const typingUsers = [];
+    snapshot.docs.forEach((docSnap) => {
+      if (docSnap.data().isTyping && docSnap.id !== currentUserId && now - docSnap.data().timestamp < 5000) { typingUsers.push(userProfiles[docSnap.id]?.username || "Someone"); }
+    });
+    if (typingUsers.length === 0) typingIndicator.innerHTML = "&nbsp;";
+    else typingIndicator.textContent = typingUsers.length === 1 ? `${typingUsers[0]} is typing...` : "Several users are typing...";
+  });
 }
 
-/**
- * Update typing status
- * @param {boolean} isTyping - Whether user is typing
- */
-const updateTypingStatus = debounce(async (isTyping) => {
-  if (!state.db || !state.currentUserId) return;
-  
-  if (state.typingTimeout) {
-    clearTimeout(state.typingTimeout);
-    state.typingTimeout = null;
-  }
-  
+async function updateTypingStatus(isTyping) {
+  if (!db || !currentUserId) return;
+  if (typingTimeout) { clearTimeout(typingTimeout); typingTimeout = null; }
   try {
-    const typingDocRef = doc(state.db, "typingStatus", state.currentUserId);
-    await setDoc(typingDocRef, { 
-      isTyping: isTyping, 
-      timestamp: Date.now() 
-    });
-    
-    if (isTyping) {
-      state.typingTimeout = setTimeout(() => {
-        updateTypingStatus(false);
-      }, TYPING_TIMEOUT);
-    }
-  } catch (e) {
-    // Silent fail for typing status
-  }
-}, 300);
+      const typingDocRef = doc(db, "typingStatus", currentUserId);
+      await setDoc(typingDocRef, { isTyping: isTyping, timestamp: Date.now() });
+      if (isTyping) typingTimeout = setTimeout(() => { updateTypingStatus(false); }, 3000);
+  } catch(e) {}
+}
 
-// ============================================================
-// RENDER FEED
-// ============================================================
+function getDateHeader(date) {
+  const today = new Date(); const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
 
-/**
- * Render message feed
- * @param {Array} docs - Firestore documents
- * @param {string} type - Collection type
- * @param {Object} snapshot - Firestore snapshot
- * @param {boolean} isRerender - Whether this is a re-render
- * @param {boolean} isFirstSnapshot - Whether this is the first snapshot
- */
+function formatMessageTime(date) {
+  const diff = (new Date()) - date; const minutes = Math.floor(Math.floor(diff / 1000) / 60);
+  if (minutes < 5) return Math.floor(diff/1000) < 60 ? "Just now" : `${minutes} mins ago`;
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
-  if (!feedContainer) return;
-  
-  // Handle notifications for new messages
   if (!isRerender && snapshot) {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === "added") {
-        const data = change.doc.data();
-        const msgTime = data.timestamp ? data.timestamp.toMillis() : 0;
-        const isNewMessage = msgTime > appStartTime;
-        const isHidden = data.hiddenFor?.includes(state.currentUserId);
-        
-        if (isNewMessage && 
-            (document.visibilityState === "hidden" || state.currentPage !== type) && 
-            data.userId !== state.currentUserId && 
-            !isHidden) {
-          showNotification(
-            type === "chat" ? "New Chat" : "New Confession", 
-            data.text?.substring(0, 100) || "New message"
-          );
-        }
-      }
-    });
+      snapshot.docChanges().forEach((change) => {
+          if (change.type === "added") {
+              const data = change.doc.data();
+              const msgTime = data.timestamp ? data.timestamp.toMillis() : 0;
+              const isNewMessage = msgTime > appStartTime;
+              if (isNewMessage && (document.visibilityState === "hidden" || currentPage !== type) && data.userId !== currentUserId && (!data.hiddenFor || !data.hiddenFor.includes(currentUserId))) {
+                  showNotification(type === "chat" ? "New Chat" : "New Confession", data.text || "New message");
+              }
+          }
+      });
   }
 
   const prevScrollTop = feedContainer.scrollTop;
-  const wasAtBottom = state.userIsAtBottom;
-  
+  const wasAtBottom = userIsAtBottom;
   feedContainer.innerHTML = "";
-
+  
   if (docs.length === 0) {
-    const emptyDiv = document.createElement("div");
-    emptyDiv.id = "loading";
-    emptyDiv.className = "text-center p-4 text-[#888888] text-sm";
-    emptyDiv.textContent = `NO ${type.toUpperCase()} YET. BE THE FIRST!`;
-    feedContainer.appendChild(emptyDiv);
-    return;
+    const loadingEl = document.createElement("div"); loadingEl.id = "loading"; loadingEl.className = "text-center p-4"; loadingEl.textContent = `NO ${type.toUpperCase()} YET. BE THE FIRST!`; feedContainer.appendChild(loadingEl); return;
   }
 
-  let lastUserId = null;
-  let lastDateString = null;
+  let lastUserId = null; let lastDateString = null; 
+  const isAdmin = isCurrentUserAdmin;
 
-    docs.forEach((docInstance) => {
+  docs.forEach((docInstance) => {
     const data = docInstance.data();
-    
-    // Skip hidden messages
-    if (data.hiddenFor?.includes(state.currentUserId)) {
-      return;
-    }
+    if (data.hiddenFor && data.hiddenFor.includes(currentUserId)) return;
 
     const text = data.text || "...";
-    const messageDateObj = data.timestamp ? data.timestamp.toDate() : new Date();
-    const messageDateStr = messageDateObj.toDateString();
+    let messageDateObj = data.timestamp ? data.timestamp.toDate() : new Date();
+    const messageDateStr = messageDateObj.toDateString(); 
 
-    // Date separator
     if (lastDateString !== messageDateStr) {
-      const sepDiv = document.createElement('div');
-      sepDiv.className = 'date-separator';
-      const sepSpan = document.createElement('span');
-      sepSpan.textContent = getDateHeader(messageDateObj);
-      sepDiv.appendChild(sepSpan);
-      feedContainer.appendChild(sepDiv);
-      lastDateString = messageDateStr;
-      lastUserId = null;
+        const sepDiv = document.createElement('div'); sepDiv.className = 'date-separator'; sepDiv.innerHTML = `<span>${getDateHeader(messageDateObj)}</span>`; feedContainer.appendChild(sepDiv); lastDateString = messageDateStr; lastUserId = null; 
     }
 
-    const docUserId = data.userId;
-    const profile = state.userProfiles[docUserId] || {};
-    const username = profile.username || "Anonymous";
-    const firstChar = (username[0] || "?").toUpperCase();
-    const photoURL = profile.profilePhotoURL || 
-      `https://placehold.co/32x32/000000/ffffff?text=${encodeURIComponent(firstChar)}`;
-    
-    const isMine = state.currentUserId && docUserId === state.currentUserId;
-    const isConsecutive = docUserId && docUserId === lastUserId;
-    lastUserId = docUserId;
-    
-    const userColor = getUserColor(docUserId);
+    const docUserId = data.userId; const profile = userProfiles[docUserId] || {}; const username = profile.username || "Anonymous"; const photoURL = profile.profilePhotoURL || `https://placehold.co/32x32/000000/ffffff?text=${(username[0]||"?").toUpperCase()}`;
+    const isMine = currentUserId && docUserId === currentUserId; const isConsecutive = docUserId && docUserId === lastUserId; lastUserId = docUserId; const userColor = getUserColor(docUserId);
 
-    // Create message structure
-    const alignWrapper = document.createElement("div");
-    alignWrapper.className = `flex w-full ${isMine ? "justify-end" : "justify-start"}`;
-    
-    const row = document.createElement("div");
-    row.className = "message-wrapper";
+    const alignWrapper = document.createElement("div"); alignWrapper.className = `flex w-full ${isMine ? "justify-end" : "justify-start"}`;
+    const row = document.createElement("div"); row.className = "message-wrapper"; 
+    const bubble = document.createElement("div"); bubble.className = `message-bubble rounded-lg max-w-xs sm:max-w-md md:max-w-lg ${isMine ? "my-message" : ""} ${isConsecutive ? "mt-0.5" : "mt-6"}`;
+    if (data.isPinned) { bubble.classList.add("border-l-4"); bubble.style.borderLeftColor = "#fbbf24"; }
+    bubble.dataset.id = docInstance.id; bubble.dataset.text = text; bubble.dataset.isMine = isMine; bubble.dataset.userId = docUserId; bubble.dataset.username = username; bubble.dataset.isPinned = data.isPinned || false; bubble.dataset.timestamp = data.timestamp ? data.timestamp.toMillis() : Date.now();
+    if (!isMine) { bubble.style.borderLeft = `3px solid ${userColor}`; bubble.style.background = `linear-gradient(90deg, ${userColor}10, transparent)`; }
+    if (isSelectionMode && selectedMessages.has(docInstance.id)) bubble.classList.add("selected-message");
+    bubble.addEventListener('click', (e) => { if (isSelectionMode) { e.preventDefault(); e.stopPropagation(); handleMessageClick(bubble); } });
+    const kebabBtn = document.createElement("button"); kebabBtn.className = "kebab-btn"; kebabBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16"><path d="M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/></svg>`;
+    kebabBtn.addEventListener("click", (e) => showDropdownMenu(e, bubble.dataset)); bubble.appendChild(kebabBtn);
 
-    // Create bubble
-    const bubble = document.createElement("div");
-    bubble.className = `message-bubble rounded-lg max-w-xs sm:max-w-md md:max-w-lg ${isMine ? "my-message" : ""} ${isConsecutive ? "mt-0.5" : "mt-2"}`;
-    
-    // Pinned styling
-    if (data.isPinned) {
-      bubble.classList.add("pinned");
-    }
-    
-    // Dataset attributes
-    bubble.dataset.id = docInstance.id;
-    bubble.dataset.text = text;
-    bubble.dataset.isMine = String(isMine);
-    bubble.dataset.userId = docUserId || '';
-    bubble.dataset.username = username;
-    bubble.dataset.isPinned = String(data.isPinned || false);
-    bubble.dataset.timestamp = data.timestamp ? String(data.timestamp.toMillis()) : String(Date.now());
-    
-    // Styling for other users
-    if (!isMine) {
-      bubble.style.borderLeft = `3px solid ${userColor}`;
-      bubble.style.background = `linear-gradient(90deg, ${userColor}10, transparent)`;
-    }
-    
-    // Selection mode styling
-    if (state.isSelectionMode && state.selectedMessages.has(docInstance.id)) {
-      bubble.classList.add("selected-message");
-    }
-    
-    // Click handler for selection
-    bubble.addEventListener('click', (e) => {
-      if (state.isSelectionMode) {
-        e.preventDefault();
-        e.stopPropagation();
-        handleMessageClick(bubble);
-      }
-    });
-
-    // Kebab menu button - positioned outside bubble at top corner
-    const kebabBtn = document.createElement("button");
-    kebabBtn.type = "button";
-    kebabBtn.className = "kebab-btn";
-    kebabBtn.setAttribute("aria-label", "Message options");
-    kebabBtn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" 
-           fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
-      </svg>`;
-    kebabBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      showDropdownMenu(e, bubble.dataset);
-    });
-
-    // Header with avatar and username (if not consecutive)
     if (!isConsecutive) {
-      const headerElement = document.createElement("div");
-      headerElement.className = `flex items-center gap-1.5 mb-1 ${isMine ? "justify-end" : "justify-start"}`;
-      
-      const imgElement = document.createElement("img");
-      imgElement.src = photoURL;
-      imgElement.alt = "";
-      imgElement.className = `chat-pfp ${isMine ? "order-2" : "order-1"}`;
-      imgElement.loading = "lazy";
-      imgElement.draggable = false;
-      if (!isMine) imgElement.style.borderColor = userColor;
-      
-      imgElement.onerror = function() {
-        this.src = `https://placehold.co/32x32/000000/ffffff?text=${encodeURIComponent(firstChar)}`;
-      };
-      
-      const usernameElement = document.createElement("div");
-      usernameElement.className = `font-bold text-sm opacity-90 ${isMine ? "order-1 text-right" : "order-2 text-left"}`;
-      usernameElement.textContent = username;
-      if (!isMine) usernameElement.style.color = userColor;
-      
-      headerElement.appendChild(imgElement);
-      headerElement.appendChild(usernameElement);
-      bubble.appendChild(headerElement);
+      const headerElement = document.createElement("div"); headerElement.className = `flex items-center gap-1.5 mb-1 ${isMine ? "justify-end" : "justify-start"}`;
+      const imgElement = document.createElement("img"); imgElement.src = photoURL; imgElement.className = `chat-pfp ${isMine ? "order-2" : "order-1"}`; if (!isMine) imgElement.style.borderColor = userColor;
+      const usernameElement = document.createElement("div"); usernameElement.className = `font-bold text-sm opacity-90 ${isMine ? "order-1 text-right" : "order-2 text-left"}`; usernameElement.textContent = username; if (!isMine) usernameElement.style.color = userColor;
+      headerElement.appendChild(imgElement); headerElement.appendChild(usernameElement); bubble.appendChild(headerElement);
     }
 
-    // Reply preview
     if (data.replyTo) {
-      const replyPreview = document.createElement("div");
-      replyPreview.className = "reply-preview";
-      
-      const replyAuthorEl = document.createElement("div");
-      replyAuthorEl.className = "reply-author";
-      replyAuthorEl.textContent = state.userProfiles[data.replyTo.userId]?.username || "Anonymous";
-      
-      if (!isMine) {
-        replyPreview.style.borderLeftColor = userColor;
-        replyAuthorEl.style.color = userColor;
-      }
-      
-      const replyTextEl = document.createElement("div");
-      replyTextEl.className = "reply-text";
-      replyTextEl.textContent = data.replyTo.text;
-      
-      replyPreview.appendChild(replyAuthorEl);
-      replyPreview.appendChild(replyTextEl);
-      
-      replyPreview.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const escapedId = escapeSelector(data.replyTo.messageId);
-        const originalBubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
-        if (originalBubble) {
-          originalBubble.scrollIntoView({ behavior: "smooth", block: "center" });
-          originalBubble.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
-          setTimeout(() => {
-            originalBubble.style.backgroundColor = "";
-          }, 1000);
-        }
-      });
-      
+      const replyPreview = document.createElement("div"); replyPreview.className = "reply-preview";
+      const replyAuthorEl = document.createElement("div"); replyAuthorEl.className = "reply-author"; replyAuthorEl.textContent = (userProfiles[data.replyTo.userId] || {}).username || "Anonymous"; if (!isMine) { replyPreview.style.borderLeftColor = userColor; replyAuthorEl.style.color = userColor; }
+      const replyTextEl = document.createElement("div"); replyTextEl.className = "reply-text"; replyTextEl.textContent = data.replyTo.text;
+      replyPreview.appendChild(replyAuthorEl); replyPreview.appendChild(replyTextEl);
+      replyPreview.addEventListener("click", () => { const originalBubble = document.querySelector(`.message-bubble[data-id="${data.replyTo.messageId}"]`); if (originalBubble) { originalBubble.scrollIntoView({ behavior: "smooth", block: "center" }); originalBubble.style.backgroundColor = "rgba(255, 255, 255, 0.1)"; setTimeout(() => { originalBubble.style.backgroundColor = ""; }, 1000); } });
       bubble.appendChild(replyPreview);
     }
 
-    // Message text
-    const textElement = document.createElement("p");
-    textElement.className = "text-left";
-    
-    if (data.isPinned) {
+    const textElement = document.createElement("p"); textElement.className = "text-left"; 
+    // SECURITY: Use textContent for user data to prevent XSS, add pin icon separately
+    if (data.isPinned) { 
       const pinIcon = document.createElement("span");
       pinIcon.className = "text-amber-400 mr-1";
-      pinIcon.setAttribute("aria-hidden", "true");
+      pinIcon.title = "Pinned";
       pinIcon.textContent = "📌";
       textElement.appendChild(pinIcon);
+      textElement.appendChild(document.createTextNode(text));
+    } else { 
+      textElement.textContent = text; 
     }
-    
-    textElement.appendChild(document.createTextNode(text));
     bubble.appendChild(textElement);
 
-    // Footer with timestamp
-    const footerDiv = document.createElement("div");
-    footerDiv.className = "bubble-footer";
-    footerDiv.style.justifyContent = isMine ? "flex-end" : "flex-start";
-    
-    const timeElement = document.createElement("span");
-    timeElement.className = "inner-timestamp";
-    timeElement.dataset.ts = data.timestamp ? String(data.timestamp.toMillis()) : String(Date.now());
-    
-    let timeText = formatMessageTime(messageDateObj);
-    if (data.edited) timeText += " (edited)";
-    timeElement.textContent = timeText;
-    
-    footerDiv.appendChild(timeElement);
-    bubble.appendChild(footerDiv);
+    const footerDiv = document.createElement("div"); footerDiv.className = "bubble-footer"; footerDiv.style.justifyContent = isMine ? "flex-end" : "flex-start";
+    const timeElement = document.createElement("span"); timeElement.className = "inner-timestamp"; timeElement.dataset.ts = data.timestamp ? data.timestamp.toMillis() : Date.now();
+    timeElement.textContent = formatMessageTime(messageDateObj); if (data.edited) timeElement.textContent += " (edited)";
+    footerDiv.appendChild(timeElement); bubble.appendChild(footerDiv);
 
-    // Reaction chips
+    const replyBtn = document.createElement("button"); replyBtn.className = "side-action-btn"; replyBtn.innerHTML = "↩"; replyBtn.onclick = (e) => { e.stopPropagation(); startReplyMode(bubble.dataset); };
+    const reactBtn = document.createElement("button"); reactBtn.className = "side-action-btn"; reactBtn.innerHTML = "♡";
+    const picker = document.createElement("div"); picker.className = "reaction-picker hidden";
     const docReactions = data.reactions || {};
-    const chipsContainer = document.createElement("div");
-    chipsContainer.className = "reaction-chips-container";
-    let hasChips = false;
-    
-    Object.keys(REACTION_TYPES).forEach(rtype => {
-      const userIds = docReactions[rtype] || [];
-      if (userIds.length > 0) {
-        hasChips = true;
-        const chip = document.createElement("div");
-        chip.className = "reaction-chip";
-        
-        const hasReacted = userIds.includes(state.currentUserId);
-        if (hasReacted) chip.classList.add("user-reacted");
-        
-        const emojiSpan = document.createElement("span");
-        emojiSpan.textContent = REACTION_TYPES[rtype];
-        
-        const countSpan = document.createElement("span");
-        countSpan.textContent = ` ${userIds.length}`;
-        
-        chip.appendChild(emojiSpan);
-        chip.appendChild(countSpan);
-        
-        chip.onclick = (e) => {
-          e.stopPropagation();
-          toggleReaction(docInstance.id, type, rtype, hasReacted);
-        };
-        
-        chipsContainer.appendChild(chip);
-      }
-    });
-    
-    if (hasChips) {
-      bubble.appendChild(chipsContainer);
-      bubble.classList.add("has-reactions");
-    }
-
-    // Action buttons (bottom) - Reply
-    const replyBtn = document.createElement("button");
-    replyBtn.type = "button";
-    replyBtn.className = "side-action-btn";
-    replyBtn.setAttribute("aria-label", "Reply to message");
-    replyBtn.textContent = "↩";
-    replyBtn.onclick = (e) => {
-      e.stopPropagation();
-      startReplyMode(bubble.dataset);
-    };
-
-    // Action buttons (bottom) - React
-    const reactBtn = document.createElement("button");
-    reactBtn.type = "button";
-    reactBtn.className = "side-action-btn";
-    reactBtn.setAttribute("aria-label", "Add reaction");
-    reactBtn.textContent = "♡";
-
-    // Reaction picker
-    const picker = document.createElement("div");
-    picker.className = "reaction-picker hidden";
-    picker.setAttribute("role", "menu");
-    
     Object.entries(REACTION_TYPES).forEach(([rtype, emoji]) => {
-      const opt = document.createElement("span");
-      opt.className = "reaction-option";
-      opt.setAttribute("role", "menuitem");
-      opt.textContent = emoji;
-      opt.onclick = (e) => {
-        e.stopPropagation();
-        const hasReacted = (docReactions[rtype] || []).includes(state.currentUserId);
-        toggleReaction(docInstance.id, type, rtype, hasReacted);
-        picker.classList.add("hidden");
-        picker.remove();
-      };
+      const opt = document.createElement("span"); opt.className = "reaction-option"; opt.textContent = emoji;
+      opt.onclick = (e) => { e.stopPropagation(); const hasReacted = (docReactions[rtype] || []).includes(currentUserId); toggleReaction(docInstance.id, type, rtype, hasReacted); picker.classList.add("hidden"); };
       picker.appendChild(opt);
     });
+    reactBtn.onclick = (e) => { e.stopPropagation(); document.querySelectorAll(".reaction-picker").forEach(p => p.classList.add("hidden")); const rect = reactBtn.getBoundingClientRect(); picker.style.top = `${rect.top - 60}px`; picker.style.left = window.innerWidth < 640 ? "50%" : `${rect.left}px`; if (window.innerWidth < 640) picker.style.transform = "translateX(-50%)"; picker.classList.remove("hidden"); document.body.appendChild(picker); };
 
-    reactBtn.onclick = (e) => {
-      e.stopPropagation();
-      
-      document.querySelectorAll(".reaction-picker").forEach(p => {
-        p.classList.add("hidden");
-        p.remove();
-      });
-      
-      const rect = reactBtn.getBoundingClientRect();
-      picker.style.top = `${rect.top - 60}px`;
-      
-      if (window.innerWidth < 640) {
-        picker.style.left = "50%";
-        picker.style.transform = "translateX(-50%)";
-      } else {
-        picker.style.left = `${rect.left}px`;
-      }
-      
-      picker.classList.remove("hidden");
-      document.body.appendChild(picker);
-    };
-
-    // Bubble wrapper for positioning kebab outside
-    const bubbleWrapper = document.createElement("div");
-    bubbleWrapper.className = `bubble-wrapper ${isMine ? "my-bubble-wrapper" : ""}`;
-    bubbleWrapper.appendChild(kebabBtn);
-    bubbleWrapper.appendChild(bubble);
-
-    // Assemble row based on message ownership
-    if (isMine) {
-      row.appendChild(reactBtn);
-      row.appendChild(replyBtn);
-      row.appendChild(bubbleWrapper);
-    } else {
-      row.appendChild(bubbleWrapper);
-      row.appendChild(replyBtn);
-      row.appendChild(reactBtn);
-    }
-    
-    alignWrapper.appendChild(row);
-    feedContainer.appendChild(alignWrapper);
-  });
-  
-  // Scroll anchor for observer
-  const scrollAnchor = document.createElement("div");
-  scrollAnchor.id = "scrollAnchor";
-  scrollAnchor.style.height = "1px";
-  scrollAnchor.style.width = "100%";
-  feedContainer.appendChild(scrollAnchor);
-  
-  if (state.bottomObserver) {
-    state.bottomObserver.disconnect();
-    state.bottomObserver.observe(scrollAnchor);
-  }
-
-  // Handle scrolling
-  const hasNewMessages = snapshot && 
-    snapshot.docChanges().some(change => change.type === 'added');
-  
-  if (isFirstSnapshot && docs.length > 0) {
-    feedContainer.style.scrollBehavior = "auto";
-    scrollToBottom();
-    requestAnimationFrame(() => {
-      scrollToBottom();
-      feedContainer.style.scrollBehavior = "smooth";
+    const chipsContainer = document.createElement("div"); chipsContainer.className = "reaction-chips-container"; let hasChips = false;
+    Object.keys(REACTION_TYPES).forEach(rtype => {
+      const userIds = docReactions[rtype] || []; if (userIds.length > 0) { hasChips = true; const chip = document.createElement("div"); chip.className = "reaction-chip"; const hasReacted = userIds.includes(currentUserId); if (hasReacted) chip.classList.add("user-reacted"); chip.innerHTML = `${REACTION_TYPES[rtype]} ${userIds.length}`; chip.onclick = (e) => { e.stopPropagation(); toggleReaction(docInstance.id, type, rtype, hasReacted); }; chipsContainer.appendChild(chip); }
     });
-  } else if (hasNewMessages) {
-    const lastDoc = docs[docs.length - 1];
-    const isOwnMessage = lastDoc && lastDoc.data().userId === state.currentUserId;
-    
-    if (isOwnMessage || wasAtBottom) {
-      scrollToBottom();
-    } else {
-      state.unreadMessages++;
-      updateScrollButton();
-    }
-  } else {
-    feedContainer.scrollTop = prevScrollTop;
-  }
+    if (hasChips) { bubble.appendChild(chipsContainer); bubble.classList.add("has-reactions"); }
+
+    if (isMine) { row.appendChild(reactBtn); row.appendChild(replyBtn); row.appendChild(bubble); } else { row.appendChild(bubble); row.appendChild(replyBtn); row.appendChild(reactBtn); }
+    alignWrapper.appendChild(row); feedContainer.appendChild(alignWrapper);
+  });
+
+  const scrollAnchor = document.createElement("div"); scrollAnchor.id = "scrollAnchor"; scrollAnchor.style.height = "1px"; scrollAnchor.style.width = "100%"; feedContainer.appendChild(scrollAnchor); if (bottomObserver) { bottomObserver.disconnect(); bottomObserver.observe(scrollAnchor); }
+
+  const hasNewMessages = snapshot && snapshot.docChanges().some(change => change.type === 'added');
+  if (isFirstSnapshot && docs.length > 0) { feedContainer.style.scrollBehavior = "auto"; scrollToBottom(); setTimeout(() => { scrollToBottom(); feedContainer.style.scrollBehavior = "smooth"; }, 200); } else if (hasNewMessages) { if ((docs.length > 0 && docs[docs.length - 1].data().userId === currentUserId) || wasAtBottom) { scrollToBottom(); } else { unreadMessages++; updateScrollButton(); } } else { feedContainer.scrollTop = prevScrollTop; }
 }
 
-// ============================================================
-// MESSAGE POSTING
-// ============================================================
+document.addEventListener("click", (e) => { if(!e.target.closest(".side-action-btn") && !e.target.closest(".reaction-picker")) { document.querySelectorAll(".reaction-picker").forEach(p => p.classList.add("hidden")); } if (!contextMenu.contains(e.target) && !e.target.closest(".kebab-btn")) hideDropdownMenu(); });
+setInterval(() => { document.querySelectorAll('.inner-timestamp').forEach(el => { const ts = parseInt(el.dataset.ts); if (ts > 0) el.textContent = formatMessageTime(new Date(ts)) + (el.textContent.includes("edited") ? " (edited)" : ""); }); }, 60000);
+scrollToBottomBtn.addEventListener("click", scrollToBottom);
 
-/**
- * Post a message
- * @param {Object} collectionRef - Firestore collection reference
- * @param {HTMLTextAreaElement} input - Input element
- */
 async function postMessage(collectionRef, input) {
-  if (state.currentUsername === "Anonymous") {
-    showToast("Please set a username first!", "error");
-    openProfileModal();
-    return;
+  if (currentUsername === "Anonymous") { alert("Set username first!"); openProfileModal(); return; }
+  if (db && currentUserId) { 
+    const banRef = doc(db, "banned_users", currentUserId); 
+    const banSnap = await getDoc(banRef); 
+    if (banSnap.exists()) { alert("You have been banned from posting."); input.value = ""; return; } 
   }
-  
-  if (state.db && state.currentUserId) {
-    try {
-      const banRef = doc(state.db, "banned_users", state.currentUserId);
-      const banSnap = await getDoc(banRef);
-      if (banSnap.exists()) {
-        showToast("You have been banned from posting.", "error");
-        input.value = "";
-        return;
-      }
-    } catch (e) {
-      console.warn("Ban check error:", e);
-    }
-  }
-  
   const text = input.value.trim();
-  
-  if (!isValidMessageText(text)) {
-    showToast("Message must be 1-2000 characters.", "error");
-    return;
-  }
-  
-  if (!text || !state.db) return;
-  
-  input.disabled = true;
-  
-  try {
-    const messageData = {
-      text: text,
-      timestamp: serverTimestamp(),
-      userId: state.currentUserId,
-    };
-    
-    if (state.replyToMessage) {
-      messageData.replyTo = {
-        messageId: state.replyToMessage.id,
-        userId: state.replyToMessage.userId,
-        text: state.replyToMessage.text?.substring(0, 500) || ''
-      };
-    }
-    
-    await addDoc(collectionRef, messageData);
-
-    await setDoc(doc(state.db, "users", state.currentUserId), {
-      lastMessageAt: serverTimestamp()
-    }, { merge: true });
-
-    input.value = "";
-    cancelReplyMode();
-    updateTypingStatus(false);
-    scrollToBottom();
-    
-  } catch (e) {
-    console.error('Post error:', e);
-    if (e.code === 'permission-denied') {
-      showToast("Please wait a moment before sending another message.", "error");
-    } else {
-      showToast("Failed to send message. Please try again.", "error");
-    }
-  } finally {
-    input.disabled = false;
-    input.focus();
+  if (text && db) { 
+    try { 
+      // Send message
+      await addDoc(collectionRef, { 
+        text: text, 
+        timestamp: serverTimestamp(), 
+        userId: currentUserId, 
+        ...(replyToMessage && { replyTo: { messageId: replyToMessage.id, userId: replyToMessage.userId, text: replyToMessage.text } }) 
+      }); 
+      
+      // SECURITY: Update lastMessageAt for rate limiting (required by security rules)
+      await setDoc(doc(db, "users", currentUserId), { 
+        lastMessageAt: serverTimestamp() 
+      }, { merge: true });
+      
+      input.value = ""; 
+      cancelReplyMode(); 
+      updateTypingStatus(false); 
+      scrollToBottom(); 
+    } catch (e) { 
+      console.error(e); 
+      // Check if it's a rate limit error
+      if (e.code === 'permission-denied') {
+        alert("Please wait a moment before sending another message.");
+      } else {
+        alert("Send failed."); 
+      }
+    } 
   }
 }
 
-// ============================================================
-// REPLY MODE
-// ============================================================
+confessionForm.addEventListener("submit", (e) => { e.preventDefault(); postMessage(confessionsCollection, confessionInput); });
+chatForm.addEventListener("submit", (e) => { e.preventDefault(); postMessage(chatCollection, chatInput); });
+navConfessions.addEventListener("click", () => showPage("confessions")); navChat.addEventListener("click", () => showPage("chat"));
+profileButton.addEventListener("click", openProfileModal); modalCloseButton.addEventListener("click", closeProfileModal); modalSaveButton.addEventListener("click", handleProfileSave); editModalCancelButton.addEventListener("click", closeEditModal); editModalSaveButton.addEventListener("click", saveEdit); confirmModalNoButton.addEventListener("click", closeConfirmModal);
+menuEdit.addEventListener("click", () => { if (currentContextMenuData) showEditModal(currentContextMenuData.id, currentPage, currentContextMenuData.text); hideDropdownMenu(); });
+menuDelete.addEventListener("click", () => { if (currentContextMenuData) { const isMine = currentContextMenuData.isMine === "true"; showConfirmModal(isMine ? "Delete this message?" : "Hide for me?", isMine, currentContextMenuData.id); } hideDropdownMenu(); });
+menuSelect.addEventListener("click", () => { enterSelectionMode(); hideDropdownMenu(); });
+selectionCancel.addEventListener("click", exitSelectionMode); selectionDelete.addEventListener("click", handleMultiDelete); cancelReply.addEventListener("click", cancelReplyMode);
+confessionInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postMessage(confessionsCollection, confessionInput); } else updateTypingStatus(true); });
+chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postMessage(chatCollection, chatInput); } else updateTypingStatus(true); });
 
-/**
- * Start reply mode
- * @param {Object} messageData - Message data object
- */
-function startReplyMode(messageData) {
-  const repliedUserId = messageData.userId || 
-    (messageData.isMine === "true" ? state.currentUserId : null);
-  
-  state.replyToMessage = {
-    id: messageData.id,
-    userId: repliedUserId,
-    text: messageData.text
-  };
-  
-  const repliedUsername = state.userProfiles[repliedUserId]?.username || "Anonymous";
-  setTextSafely(replyAuthor, `Replying to ${repliedUsername}`);
-  setTextSafely(replyText, state.replyToMessage.text);
-  
-  if (replyBar) {
-    replyBar.classList.add("show");
-  }
-  
-  const input = state.currentPage === "chat" ? chatInput : confessionInput;
-  if (input) input.focus();
-}
+function startReplyMode(messageData) { let repliedUserId = messageData.userId || (messageData.isMine === "true" ? currentUserId : null); replyToMessage = { id: messageData.id, userId: repliedUserId, text: messageData.text }; replyAuthor.textContent = `Replying to ${(userProfiles[repliedUserId] || {}).username || "Anonymous"}`; replyText.textContent = replyToMessage.text; replyBar.classList.add("show"); (currentPage === "chat" ? chatInput : confessionInput).focus(); }
+function cancelReplyMode() { replyToMessage = null; replyBar.classList.remove("show"); }
 
-/**
- * Cancel reply mode
- */
-function cancelReplyMode() {
-  state.replyToMessage = null;
-  
-  if (replyBar) {
-    replyBar.classList.remove("show");
-  }
-}
-
-// ============================================================
-// EVENT LISTENERS
-// ============================================================
-
-// Global click handler for closing menus
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".side-action-btn") && !e.target.closest(".reaction-picker")) {
-    document.querySelectorAll(".reaction-picker").forEach(p => {
-      p.classList.add("hidden");
-      p.remove();
-    });
-  }
-  
-  if (!contextMenu?.contains(e.target) && !e.target.closest(".kebab-btn")) {
-    hideDropdownMenu();
-  }
-});
-
-// Update timestamps periodically
-setInterval(() => {
-  document.querySelectorAll('.inner-timestamp').forEach(el => {
-    const ts = parseInt(el.dataset.ts, 10);
-    if (ts > 0) {
-      const isEdited = el.textContent.includes("(edited)");
-      el.textContent = formatMessageTime(new Date(ts)) + (isEdited ? " (edited)" : "");
-    }
-  });
-}, 60000);
-
-// Scroll button
-scrollToBottomBtn?.addEventListener("click", scrollToBottom);
-
-// Form submissions
-confessionForm?.addEventListener("submit", (e) => {
-  e.preventDefault();
-  postMessage(state.confessionsCollection, confessionInput);
-});
-
-chatForm?.addEventListener("submit", (e) => {
-  e.preventDefault();
-  postMessage(state.chatCollection, chatInput);
-});
-
-// Navigation
-navConfessions?.addEventListener("click", () => showPage("confessions"));
-navChat?.addEventListener("click", () => showPage("chat"));
-
-navConfessions?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") {
-    e.preventDefault();
-    showPage("confessions");
-  }
-});
-
-navChat?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") {
-    e.preventDefault();
-    showPage("chat");
-  }
-});
-
-// Modal buttons
-profileButton?.addEventListener("click", openProfileModal);
-modalCloseButton?.addEventListener("click", closeProfileModal);
-modalSaveButton?.addEventListener("click", handleProfileSave);
-editModalCancelButton?.addEventListener("click", closeEditModal);
-editModalSaveButton?.addEventListener("click", saveEdit);
-confirmModalNoButton?.addEventListener("click", closeConfirmModal);
-
-// Context menu actions
-menuEdit?.addEventListener("click", () => {
-  if (state.currentContextMenuData) {
-    showEditModal(
-      state.currentContextMenuData.id, 
-      state.currentPage, 
-      state.currentContextMenuData.text
-    );
-  }
-  hideDropdownMenu();
-});
-
-menuDelete?.addEventListener("click", () => {
-  if (state.currentContextMenuData) {
-    const isMine = state.currentContextMenuData.isMine === "true";
-    showConfirmModal(
-      isMine ? "Delete this message?" : "Hide this message?", 
-      isMine, 
-      state.currentContextMenuData.id
-    );
-  }
-  hideDropdownMenu();
-});
-
-menuSelect?.addEventListener("click", () => {
-  enterSelectionMode();
-  hideDropdownMenu();
-});
-
-// Selection bar
-selectionCancel?.addEventListener("click", exitSelectionMode);
-selectionDelete?.addEventListener("click", handleMultiDelete);
-cancelReply?.addEventListener("click", cancelReplyMode);
-
-// Input handlers
-confessionInput?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    postMessage(state.confessionsCollection, confessionInput);
-  } else {
-    updateTypingStatus(true);
-  }
-});
-
-chatInput?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    postMessage(state.chatCollection, chatInput);
-  } else {
-    updateTypingStatus(true);
-  }
-});
-
-chatInput?.addEventListener("input", () => {
-  updateTypingStatus(true);
-});
-
-confessionInput?.addEventListener("input", () => {
-  updateTypingStatus(true);
-});
-
-// Escape key handler
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    if (profileModal?.classList.contains("is-open")) {
-      closeProfileModal();
-    } else if (editModal?.classList.contains("is-open")) {
-      closeEditModal();
-    } else if (confirmModal?.classList.contains("is-open")) {
-      closeConfirmModal();
-    } else if (contextMenu?.classList.contains("is-open")) {
-      hideDropdownMenu();
-    } else if (state.isSelectionMode) {
-      exitSelectionMode();
-    } else if (state.replyToMessage) {
-      cancelReplyMode();
-    }
-  }
-});
-
-// Handle visibility change
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") {
-    if (state.userIsAtBottom) {
-      state.unreadMessages = 0;
-      updateScrollButton();
-    }
-  }
-});
-
-// Handle beforeunload
-window.addEventListener("beforeunload", () => {
-  if (state.db && state.currentUserId) {
-    updateTypingStatus(false);
-  }
-});
-
-// ============================================================
-// INITIALIZE APPLICATION
-// ============================================================
-
-initFirebase().catch(err => {
-  console.error("Failed to initialize app:", err);
-  setTextSafely(loading, "Error: Failed to initialize. Please refresh the page.");
-});
+initFirebase();
