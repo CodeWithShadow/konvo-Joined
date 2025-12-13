@@ -1022,7 +1022,9 @@ body.selection-mode .message-bubble {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
   transition: all 0.3s var(--ease-out-expo);
-  max-width: 90vw;
+  /* NOTE: Do not force a responsive max-width here.
+     Individual modals set their own sizing via Tailwind classes (e.g. max-w-sm).
+     A global max-width was overriding those and causing the dialog to grow/shrink with the window. */
   max-height: 90vh;
   overflow: auto;
 }
