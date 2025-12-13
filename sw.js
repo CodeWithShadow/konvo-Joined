@@ -2,7 +2,7 @@
 // Version: 2.0 (Security Hardened)
 'use strict';
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_NAME = `konvo-cache-${CACHE_VERSION}`; // ✅ Backticks
 
 // Files to cache (static assets only)
@@ -10,8 +10,6 @@ const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/dist/style.css',
-  '/favicon.svg',
-  '/icon.jpg',
   '/app.js'
 ];
 
@@ -27,7 +25,9 @@ const NO_CACHE_PATTERNS = [
   /googleapis/i,
   /firestore/i,
   /identitytoolkit/i,
-  /securetoken/i
+  /securetoken/i,
+  /\/favicon\./i,
+  /\/icon\.(png|jpg|jpeg|svg|ico)/i
 ];
 
 /**
