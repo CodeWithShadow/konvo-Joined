@@ -1,6 +1,6 @@
 // ============================================================
 // KONVO - ANONYMOUS CHAT APPLICATION
-// Version: 3.2 (Security Enhanced - Device & Rate Limiting)
+// Version: 3.1 (Device Fingerprinting + IP Ban System - FIXED)
 // ============================================================
 'use strict';
 
@@ -48,7 +48,6 @@ import {
   writeBatch,
   arrayUnion,
   arrayRemove,
-  runTransaction,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // ============================================================
@@ -260,7 +259,7 @@ async function initializeDeviceIdentification() {
 }
 
 /**
- * Check if device is banned (for pre-auth check)
+ * Check if device is banned
  * @param {Object} db - Firestore database instance
  * @param {Object} deviceInfo - Device information object
  * @returns {Promise<Object>} - Ban check result
@@ -326,77 +325,39 @@ async function checkDeviceBan(db, deviceInfo) {
 }
 
 /**
- * Check if current user's device is banned (for authenticated users)
- * @param {Object} db - Firestore database instance
- * @param {string} userId - Current user ID
- * @param {string} fingerprint - Device fingerprint
- * @returns {Promise<boolean>} - Whether device is banned
- */
-async function isMyDeviceBanned(db, userId, fingerprint) {
-  if (!db || !userId || !fingerprint) return false;
-  
-  try {
-    const deviceDocId = `${userId}_${fingerprint}`;
-    
-    // Check if device is registered
-    const deviceRef = doc(db, "user_devices", deviceDocId);
-    const deviceSnap = await getDoc(deviceRef);
-    
-    if (!deviceSnap.exists()) return false;
-    
-    // Check banned_devices collection
-    const banRef = doc(db, "banned_devices", fingerprint);
-    const banSnap = await getDoc(banRef);
-    return banSnap.exists();
-    
-  } catch (error) {
-    console.error('Device ban check error:', error);
-    return false;
-  }
-}
-
-/**
- * Register device in database - SECURE VERSION
- * Uses userId_fingerprint format for document ID
+ * Register device in database
  * @param {Object} db - Firestore database instance
  * @param {string} userId - User ID
  * @param {Object} deviceInfo - Device information
  */
 async function registerDevice(db, userId, deviceInfo) {
-  if (!db || !userId || !deviceInfo?.fingerprint) return;
+  if (!db || !userId || !deviceInfo) return;
   
   try {
-    // NEW FORMAT: userId_fingerprint for secure document ID
-    const deviceDocId = `${userId}_${deviceInfo.fingerprint}`;
-    const deviceRef = doc(db, "user_devices", deviceDocId);
+    const deviceRef = doc(db, "user_devices", `${userId}_${deviceInfo.fingerprint}`);
     
-    // Check if document exists
-    const deviceSnap = await getDoc(deviceRef);
+    await setDoc(deviceRef, {
+      userId: userId,
+      fingerprint: deviceInfo.fingerprint,
+      ipAddress: deviceInfo.ipAddress,
+      ipHash: deviceInfo.ipHash,
+      userAgent: deviceInfo.userAgent,
+      language: deviceInfo.language,
+      timezone: deviceInfo.timezone,
+      screenResolution: deviceInfo.screenResolution,
+      platform: deviceInfo.platform,
+      firstSeen: serverTimestamp(),
+      lastSeen: serverTimestamp(),
+    }, { merge: true });
     
-    if (deviceSnap.exists()) {
-      // Update existing record
-      await updateDoc(deviceRef, {
-        lastSeen: serverTimestamp(),
-        ipAddress: deviceInfo.ipAddress || null,
-        ipHash: deviceInfo.ipHash || null,
-        userAgent: deviceInfo.userAgent || null,
-      });
-    } else {
-      // Create new record
-      await setDoc(deviceRef, {
-        userId: userId,
-        fingerprint: deviceInfo.fingerprint,
-        ipAddress: deviceInfo.ipAddress || null,
-        ipHash: deviceInfo.ipHash || null,
-        userAgent: deviceInfo.userAgent || null,
-        language: deviceInfo.language || null,
-        timezone: deviceInfo.timezone || null,
-        screenResolution: deviceInfo.screenResolution || null,
-        platform: deviceInfo.platform || null,
-        firstSeen: serverTimestamp(),
-        lastSeen: serverTimestamp(),
-      });
-    }
+    // Also update last seen on existing record
+    await updateDoc(deviceRef, {
+      lastSeen: serverTimestamp(),
+      ipAddress: deviceInfo.ipAddress, // Update IP in case it changed
+      ipHash: deviceInfo.ipHash,
+    }).catch(() => {
+      // Ignore if document doesn't exist for update
+    });
     
     console.log('Device registered');
     
@@ -773,12 +734,12 @@ function createKebabIcon() {
 // FIREBASE CONFIGURATION
 // ============================================================
 const firebaseConfig = {
-  apiKey: "AIzaSyDlijum_4JJ0V4eeE_AZS-T-ROGfby9o7Q",
-  authDomain: "konvo-endgame.firebaseapp.com",
-  projectId: "konvo-endgame",
-  storageBucket: "konvo-endgame.firebasestorage.app",
-  messagingSenderId: "297152484978",
-  appId: "1:297152484978:web:d6a2907445c6c431cb14eb"
+  apiKey: "AIzaSyB8T4naak4ZlMGLKGFLpWEKXHqRSw4O9Xc",
+  authDomain: "konvomain-fa7ed.firebaseapp.com",
+  projectId: "konvomain-fa7ed",
+  storageBucket: "konvomain-fa7ed.firebasestorage.app",
+  messagingSenderId: "81540120286",
+  appId: "1:81540120286:web:9a01799acba41c35c48c4f"
 };
 
 const appStartTime = Date.now();
@@ -1029,6 +990,7 @@ function cleanupAllListeners() {
   });
 }
 
+// ADD THIS NEW FUNCTION:
 function cleanupNonBanListeners() {
   const banListenerKeys = ['banCheck', 'deviceBanCheck', 'ipBanCheck'];
   
@@ -1121,8 +1083,8 @@ function recordMessage() {
 }
 
 /**
- * Auto-ban user for spamming - SECURE VERSION
- * Fetches actual username from profile and ensures device is registered
+ * Auto-ban user for spamming
+ * Bans user account, device fingerprint, and IP address
  */
 async function autoBanForSpam() {
   if (!state.db || !state.currentUserId) return;
@@ -1130,77 +1092,44 @@ async function autoBanForSpam() {
   console.log('Auto-banning user for spam...');
   
   try {
-    const userId = state.currentUserId;
-    const fingerprint = state.deviceInfo?.fingerprint;
-    
-    // SECURITY: Fetch actual username from Firestore profile
-    let actualUsername = '';
-    try {
-      const userDoc = await getDoc(doc(state.db, "users", userId));
-      if (userDoc.exists()) {
-        actualUsername = userDoc.data().username || '';
-      }
-    } catch (e) {
-      console.warn('Could not fetch username for ban:', e);
-    }
-    
-    // SECURITY: Ensure device is registered before banning
-    if (fingerprint) {
-      const deviceDocId = `${userId}_${fingerprint}`;
-      const deviceRef = doc(state.db, "user_devices", deviceDocId);
-      const deviceSnap = await getDoc(deviceRef);
-      
-      if (!deviceSnap.exists()) {
-        // Register device first (required by security rules)
-        await setDoc(deviceRef, {
-          userId: userId,
-          fingerprint: fingerprint,
-          firstSeen: serverTimestamp(),
-          lastSeen: serverTimestamp(),
-          userAgent: state.deviceInfo?.userAgent || null,
-          platform: state.deviceInfo?.platform || null,
-        });
-      }
-    }
-    
     const batch = writeBatch(state.db);
     
     // 1. Ban user account
-    const userRef = doc(state.db, "users", userId);
+    const userRef = doc(state.db, "users", state.currentUserId);
     batch.set(userRef, { banned: true }, { merge: true });
     
-    // 2. Add to banned_users collection (must contain "spam" or "Spam" in reason)
-    const banRef = doc(state.db, "banned_users", userId);
+    // 2. Add to banned_users collection
+    const banRef = doc(state.db, "banned_users", state.currentUserId);
     batch.set(banRef, {
       bannedBy: "SYSTEM_AUTO_BAN",
       timestamp: serverTimestamp(),
       reason: "Automatic ban: Spam detection (exceeded message limit)",
-      username: actualUsername // Must match actual profile
+      username: state.currentUsername || 'Unknown'
     });
     
-    // 3. Ban device fingerprint (reason must contain "spam" or "Spam")
-    if (fingerprint) {
-      const fingerprintBanRef = doc(state.db, "banned_devices", fingerprint);
+    // 3. Ban device fingerprint
+    if (state.deviceInfo?.fingerprint) {
+      const fingerprintBanRef = doc(state.db, "banned_devices", state.deviceInfo.fingerprint);
       batch.set(fingerprintBanRef, {
-        fingerprint: fingerprint,
-        userId: userId,
-        username: actualUsername,
+        fingerprint: state.deviceInfo.fingerprint,
+        userId: state.currentUserId,
+        username: state.currentUsername || 'Unknown',
         bannedBy: "SYSTEM_AUTO_BAN",
         timestamp: serverTimestamp(),
         reason: "Automatic ban: Spam detection",
-        userAgent: state.deviceInfo?.userAgent || null,
-        platform: state.deviceInfo?.platform || null,
+        userAgent: state.deviceInfo.userAgent || null,
+        platform: state.deviceInfo.platform || null,
       });
     }
     
-    // 4. Ban IP address (hashed) - reason must contain "spam" or "Spam"
+    // 4. Ban IP address (hashed)
     if (state.deviceInfo?.ipHash) {
       const ipBanRef = doc(state.db, "banned_ips", state.deviceInfo.ipHash);
       batch.set(ipBanRef, {
         ipHash: state.deviceInfo.ipHash,
         ipAddress: state.deviceInfo.ipAddress || null,
-        userId: userId,
-        username: actualUsername,
+        userId: state.currentUserId,
+        username: state.currentUsername || 'Unknown',
         bannedBy: "SYSTEM_AUTO_BAN",
         timestamp: serverTimestamp(),
         reason: "Automatic ban: Spam detection",
@@ -1213,8 +1142,8 @@ async function autoBanForSpam() {
       const rawIpBanRef = doc(state.db, "banned_ips", rawIpKey);
       batch.set(rawIpBanRef, {
         ipAddress: state.deviceInfo.ipAddress,
-        userId: userId,
-        username: actualUsername,
+        userId: state.currentUserId,
+        username: state.currentUsername || 'Unknown',
         bannedBy: "SYSTEM_AUTO_BAN",
         timestamp: serverTimestamp(),
         reason: "Automatic ban: Spam detection",
@@ -1242,6 +1171,7 @@ async function autoBanForSpam() {
 /**
  * Show banned screen specifically for spam
  */
+
 function showSpamBannedScreen() {
   // Hide app content
   const appContainer = document.getElementById('app') || document.body;
@@ -1282,7 +1212,7 @@ function showSpamBannedScreen() {
   
   const p2 = document.createElement('p');
   p2.style.cssText = 'color: #666; font-size: 0.75rem;';
-  p2.textContent = `Reason: Mana kiya tha Maat kar.`;
+  p2.textContent = `Reason: Mana kiya tha Maat kar  .`;
   
   const p3 = document.createElement('p');
   p3.style.cssText = 'color: #555; font-size: 0.7rem; margin-top: 1rem;';
@@ -1295,6 +1225,7 @@ function showSpamBannedScreen() {
   
   document.body.appendChild(overlay);
 }
+
 
 /**
  * Show spam warning toast
@@ -1573,7 +1504,7 @@ async function toggleBanUser() {
 
   hideDropdownMenu();
   
-  // Fetch fresh ban status from Firestore
+  // FIXED: Fetch fresh ban status from Firestore instead of using cache
   let isBanned = false;
   try {
     const banDocRef = doc(state.db, "banned_users", userId);
@@ -1602,8 +1533,10 @@ async function toggleBanUser() {
     // 1. Update user document
     const userRef = doc(state.db, "users", userId);
     if (isBanned) {
+      // UNBANNING: Set banned to false explicitly
       batch.update(userRef, { banned: false });
     } else {
+      // BANNING: Set banned to true
       batch.set(userRef, { banned: true }, { merge: true });
     }
     
@@ -1646,8 +1579,10 @@ async function toggleBanUser() {
         const fingerprintBanRef = doc(state.db, "banned_devices", deviceData.fingerprint);
         
         if (isBanned) {
+          // UNBANNING: Delete the ban document
           batch.delete(fingerprintBanRef);
         } else {
+          // BANNING: Create ban document
           batch.set(fingerprintBanRef, {
             fingerprint: deviceData.fingerprint,
             userId: userId,
@@ -1786,7 +1721,7 @@ async function handleAuthStateChange(user) {
     state.currentUserId = user.uid;
     console.log("Authenticated with UID:", state.currentUserId);
 
-    // Register device with user association (SECURE FORMAT)
+    // Register device with user association
     await registerDevice(state.db, state.currentUserId, state.deviceInfo);
 
     state.confessionsCollection = collection(state.db, "confessions");
@@ -1918,14 +1853,14 @@ function listenForBanStatus() {
         if (!state.isBanned) {
           state.isBanned = true;
           state.userProfiles = {};
-          cleanupNonBanListeners();
+          cleanupNonBanListeners(); // ✅ Keep ban listeners active!
           showBannedScreen();
         }
       } else {
         // User is NOT banned (unbanned or never banned)
         if (state.isBanned) {
           state.isBanned = false;
-          showUnbannedScreen();
+          showUnbannedScreen(); // ✅ Show recovery option
         }
       }
     },
@@ -1957,7 +1892,7 @@ function listenForDeviceBans() {
       if (docSnap.exists()) {
         if (!state.isDeviceBanned) {
           state.isDeviceBanned = true;
-          cleanupNonBanListeners();
+          cleanupNonBanListeners(); // ✅ Keep ban listeners active!
           showDeviceBannedScreen('Device fingerprint banned');
         }
       } else {
@@ -1980,7 +1915,7 @@ function listenForDeviceBans() {
         if (docSnap.exists()) {
           if (!state.isDeviceBanned) {
             state.isDeviceBanned = true;
-            cleanupNonBanListeners();
+            cleanupNonBanListeners(); // ✅ Keep ban listeners active!
             showDeviceBannedScreen('IP address banned');
           }
         } else {
@@ -1999,6 +1934,7 @@ function listenForDeviceBans() {
 
 /**
  * Show recovery screen when user is unbanned
+ * User needs to refresh to continue using the app
  */
 function showUnbannedScreen() {
   // Remove ban overlay
@@ -2052,6 +1988,8 @@ function showUnbannedScreen() {
   
   document.body.appendChild(overlay);
 }
+
+
 
 function showBannedScreen() {
   // Store original body content reference
@@ -2511,7 +2449,7 @@ function showConfirmModal(text, isMine, docId) {
     btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600 transition";
     btnEveryone.textContent = isAdmin && !isMine ? "NUKE (ADMIN)" : "EVERYONE";
     btnEveryone.onclick = async () => {
-            closeConfirmModal();
+      closeConfirmModal();
       try {
         await deleteDoc(doc(state.db, state.currentPage, docId));
       } catch (e) {
@@ -2553,16 +2491,9 @@ function closeConfirmModal() {
 }
 
 // ============================================================
-// REACTIONS - WITH TRANSACTION FOR BETTER ERROR HANDLING
+// REACTIONS
 // ============================================================
 
-/**
- * Toggle reaction with transaction for atomic updates
- * @param {string} docId - Document ID
- * @param {string} collectionName - Collection name
- * @param {string} reactionType - Reaction type key
- * @param {boolean} hasReacted - Whether user already reacted
- */
 async function toggleReaction(docId, collectionName, reactionType, hasReacted) {
   if (!state.db || !state.currentUserId) return;
   
@@ -2571,42 +2502,25 @@ async function toggleReaction(docId, collectionName, reactionType, hasReacted) {
   }
   
   const docRef = doc(state.db, collectionName, docId);
+  const reactionField = `reactions.${reactionType}`;
   
   try {
-    await runTransaction(state.db, async (transaction) => {
-      const messageSnap = await transaction.get(docRef);
-      
-      if (!messageSnap.exists()) {
-        throw new Error('Message not found');
-      }
-      
-      const reactions = messageSnap.data().reactions || {};
-      const currentReactions = reactions[reactionType] || [];
-      
-      let newReactions;
-      if (currentReactions.includes(state.currentUserId)) {
-        // Remove reaction
-        newReactions = currentReactions.filter(id => id !== state.currentUserId);
-      } else {
-        // Add reaction
-        newReactions = [...currentReactions, state.currentUserId];
-      }
-      
-      transaction.update(docRef, {
-        [`reactions.${reactionType}`]: newReactions
+    if (hasReacted) {
+      await updateDoc(docRef, { 
+        [reactionField]: arrayRemove(state.currentUserId) 
       });
-    });
-    
-  } catch (error) {
-    console.error("Reaction error:", error);
-    if (error.code === 'permission-denied') {
-      showToast("Unable to add reaction. Please try again.", "error");
+    } else {
+      await updateDoc(docRef, { 
+        [reactionField]: arrayUnion(state.currentUserId) 
+      });
     }
+  } catch (error) {
+    console.error("Error toggling reaction:", error);
   }
 }
 
 // ============================================================
-// CONTEXT MENU
+// CONTEXT MENU (continued)
 // ============================================================
 
 function showDropdownMenu(event, data) {
@@ -2648,8 +2562,9 @@ function showDropdownMenu(event, data) {
   if (menuBan) {
     menuBan.style.display = (isAdmin && !isMine) ? "block" : "none";
     
-    // Fetch fresh ban status asynchronously
+    // FIXED: Fetch fresh ban status instead of using cached data
     if (isAdmin && !isMine && data.userId) {
+      // Update the menu text asynchronously
       (async () => {
         try {
           const banDocRef = doc(state.db, "banned_users", data.userId);
@@ -3496,13 +3411,9 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
 }
 
 // ============================================================
-// MESSAGE POSTING - SECURE VERSION WITH RATE LIMIT SUPPORT
+// MESSAGE POSTING
 // ============================================================
 
-/**
- * Post a message with rate limiting and spam protection
- * Uses batch write to update both message and lastMessageAt atomically
- */
 async function postMessage(collectionRef, input) {
   if (state.currentUsername === "Anonymous") {
     showToast("Please set a username first!", "error");
@@ -3576,20 +3487,12 @@ async function postMessage(collectionRef, input) {
   }
   
   try {
-    const userId = state.currentUserId;
-    const userRef = doc(state.db, "users", userId);
-    
-    // Use batch write to update both message and lastMessageAt atomically
-    const batch = writeBatch(state.db);
-    
-    // Create the message document
     const messageData = {
       text: text,
       timestamp: serverTimestamp(),
-      userId: userId,
+      userId: state.currentUserId,
     };
     
-    // Add reply data if replying
     if (state.replyToMessage) {
       messageData.replyTo = {
         messageId: state.replyToMessage.id,
@@ -3598,20 +3501,15 @@ async function postMessage(collectionRef, input) {
       };
     }
     
-    // Determine collection name for addDoc
-    const collectionName = collectionRef === state.chatCollection ? 'chat' : 'confessions';
-    
-    // Add the message
     await addDoc(collectionRef, messageData);
-    
-    // Update lastMessageAt for rate limiting (separate call since addDoc doesn't work in batch)
-    await setDoc(userRef, {
-      lastMessageAt: serverTimestamp()
-    }, { merge: true });
 
     // Record this message for spam tracking
     recordMessage();
 
+    await setDoc(doc(state.db, "users", state.currentUserId), {
+      lastMessageAt: serverTimestamp()
+    }, { merge: true });
+    
     input.value = "";
     cancelReplyMode();
     updateTypingStatus(false);
@@ -3623,8 +3521,7 @@ async function postMessage(collectionRef, input) {
   } catch (e) {
     console.error('Post error:', e);
     if (e.code === 'permission-denied') {
-      // Likely rate limited
-      showToast("Please wait a moment before sending another message.", "error");
+      showToast("You don't have permission to post.", "error");
     } else {
       showToast("Failed to send message. Please try again.", "error");
     }
