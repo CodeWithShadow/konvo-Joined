@@ -3,7 +3,7 @@ module.exports = {
   content: [
     "./index.html",
     "./app.js",
-    "./src/**/*.{html,js,css}", // Added this line
+    // Add any other files that use Tailwind classes
   ],
   theme: {
     extend: {
