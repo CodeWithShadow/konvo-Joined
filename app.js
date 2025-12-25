@@ -1,16 +1,66 @@
 'use strict';
 
-(function setupAppHeight() {
+// ═══════════════════════════════════════════════════════════════════
+// MOBILE VIEWPORT HANDLING (KEYBOARD FIX)
+// ═══════════════════════════════════════════════════════════════════
+
+(function setupMobileViewport() {
+  let pendingUpdate = false;
+  
   const apply = () => {
-    const h = window.visualViewport?.height || window.innerHeight;
-    document.documentElement.style.setProperty('--app-height', `${h}px`);
-    if (document.body) document.body.style.height = `${h}px`;
+    if (pendingUpdate) return;
+    pendingUpdate = true;
+    
+    requestAnimationFrame(() => {
+      const viewport = window.visualViewport;
+      const height = viewport?.height || window.innerHeight;
+      const offsetTop = viewport?.offsetTop || 0;
+      
+      // Set CSS custom property for dynamic height
+      document.documentElement.style.setProperty('--app-height', `${height}px`);
+      document.documentElement.style.setProperty('--viewport-offset', `${offsetTop}px`);
+      
+      if (document.body) {
+        document.body.style.height = `${height}px`;
+        document.body.style.maxHeight = `${height}px`;
+      }
+      
+      // Scroll feed to bottom if user was already at bottom (keyboard opened)
+      if (typeof state !== 'undefined' && state?.userIsAtBottom && feedContainer) {
+        feedContainer.scrollTop = feedContainer.scrollHeight;
+      }
+      
+      pendingUpdate = false;
+    });
   };
+  
+  // Apply immediately
   apply();
-  window.addEventListener('resize', apply);
-  window.visualViewport?.addEventListener('resize', apply);
-  window.visualViewport?.addEventListener('scroll', apply);
+  
+  // Debounced resize handler
+  let resizeTimeout;
+  const debouncedApply = () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(apply, 50);
+  };
+  
+  // Listen for all viewport changes
+  window.addEventListener('resize', debouncedApply, { passive: true });
+  
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', apply, { passive: true });
+    window.visualViewport.addEventListener('scroll', apply, { passive: true });
+  }
+  
+  // Handle orientation change
+  window.addEventListener('orientationchange', () => {
+    setTimeout(apply, 100);
+  }, { passive: true });
 })();
+
+// ═══════════════════════════════════════════════════════════════════
+// FIREBASE IMPORTS
+// ═══════════════════════════════════════════════════════════════════
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
@@ -36,12 +86,20 @@ import {
   arrayRemove,
 } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore.js";
 
+// ═══════════════════════════════════════════════════════════════════
+// DEVICE STATE
+// ═══════════════════════════════════════════════════════════════════
+
 const deviceState = {
   fingerprint: null,
   ipAddress: null,
   isIdentified: false,
   isBannedDevice: false,
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// UTILITY FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
 
 function withTimeout(promise, ms, fallbackValue = null) {
   return Promise.race([
@@ -51,15 +109,13 @@ function withTimeout(promise, ms, fallbackValue = null) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// FIXED: Fingerprint Generation with LocalStorage Persistence
+// FINGERPRINT GENERATION WITH LOCALSTORAGE PERSISTENCE
 // ═══════════════════════════════════════════════════════════════════
 
 const FINGERPRINT_STORAGE_KEY = 'konvo_device_fp';
 
 async function generateDeviceFingerprint() {
-  // ─────────────────────────────────────────────────────────────────
-  // STEP 1: Check if we already have a saved fingerprint
-  // ─────────────────────────────────────────────────────────────────
+  // Check if we already have a saved fingerprint
   try {
     const savedFingerprint = localStorage.getItem(FINGERPRINT_STORAGE_KEY);
     
@@ -69,13 +125,10 @@ async function generateDeviceFingerprint() {
       return savedFingerprint;
     }
   } catch (e) {
-    // localStorage might be blocked (e.g., some privacy modes)
     console.warn('LocalStorage not available:', e);
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // STEP 2: No saved fingerprint, try FingerprintJS
-  // ─────────────────────────────────────────────────────────────────
+  // No saved fingerprint, try FingerprintJS
   try {
     if (typeof FingerprintJS === 'undefined') {
       console.warn('FingerprintJS not loaded, using fallback');
@@ -94,9 +147,7 @@ async function generateDeviceFingerprint() {
       return createAndSaveStableFallback();
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // STEP 3: Got fingerprint from FingerprintJS, SAVE IT!
-    // ─────────────────────────────────────────────────────────────────
+    // Got fingerprint from FingerprintJS, SAVE IT!
     const fingerprint = result.visitorId;
     saveFingerprint(fingerprint);
     deviceState.fingerprint = fingerprint;
@@ -110,9 +161,7 @@ async function generateDeviceFingerprint() {
 }
 
 function createAndSaveStableFallback() {
-  // ─────────────────────────────────────────────────────────────────
   // Check localStorage again (in case called directly)
-  // ─────────────────────────────────────────────────────────────────
   try {
     const savedFingerprint = localStorage.getItem(FINGERPRINT_STORAGE_KEY);
     if (savedFingerprint && savedFingerprint.length > 0) {
@@ -123,9 +172,7 @@ function createAndSaveStableFallback() {
     // Continue to generate new one
   }
 
-  // ─────────────────────────────────────────────────────────────────
   // Create a stable fingerprint from device info
-  // ─────────────────────────────────────────────────────────────────
   const components = [
     navigator.userAgent,
     navigator.language,
@@ -146,10 +193,7 @@ function createAndSaveStableFallback() {
     hash = hash & hash;
   }
 
-  // ─────────────────────────────────────────────────────────────────
   // Generate unique ID with random part (generated ONCE, saved forever)
-  // NO MORE Date.now() - uses random instead!
-  // ─────────────────────────────────────────────────────────────────
   const randomPart = generateRandomString(8);
   const fallbackId = 'fb_' + Math.abs(hash).toString(36) + '_' + randomPart;
 
@@ -162,7 +206,6 @@ function createAndSaveStableFallback() {
 }
 
 function generateRandomString(length) {
-  // Generate a random string for unique fingerprint suffix
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
   
@@ -192,7 +235,7 @@ function saveFingerprint(fingerprint) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// REMOVED: Old generateFallbackFingerprint function (replaced above)
+// IP ADDRESS DETECTION
 // ═══════════════════════════════════════════════════════════════════
 
 async function getUserIPAddress() {
@@ -255,6 +298,10 @@ function hashIP(ip) {
   return 'ip_' + Math.abs(hash).toString(36);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// DEVICE IDENTIFICATION
+// ═══════════════════════════════════════════════════════════════════
+
 async function initializeDeviceIdentification() {
   try {
     const result = await withTimeout(
@@ -311,6 +358,10 @@ async function initializeDeviceIdentification() {
     };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// BAN CHECKING FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
 
 async function checkDeviceBan(db, deviceInfo) {
   if (!db || !deviceInfo) {
@@ -425,6 +476,10 @@ async function registerDevice(db, userId, deviceInfo) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// UI HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+
 function hideBanCheckOverlay() {
   const overlay = document.getElementById('banCheckOverlay');
   if (overlay) {
@@ -530,6 +585,10 @@ function showDeviceBannedScreen(reason = 'Device banned') {
   document.body.classList.add('device-banned');
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// TEXT SANITIZATION & VALIDATION
+// ═══════════════════════════════════════════════════════════════════
+
 function sanitizeText(text) {
   if (typeof text !== 'string') return '';
   return text
@@ -614,6 +673,10 @@ function createSafeTextNode(text) {
   return document.createTextNode(text || '');
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// UTILITY FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+
 function debounce(func, wait) {
   let timeout;
   return function executedFunction(...args) {
@@ -641,6 +704,10 @@ function escapeSelector(selector) {
   if (typeof selector !== 'string') return '';
   return CSS.escape(selector);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SVG ICON CREATORS
+// ═══════════════════════════════════════════════════════════════════
 
 function createEnabledBellIcon() {
   const ns = "http://www.w3.org/2000/svg";
@@ -719,6 +786,10 @@ function createKebabIcon() {
   return svg;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// FIREBASE CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════
+
 const firebaseConfig = {
   apiKey: "AIzaSyDlijum_4JJ0V4eeE_AZS-T-ROGfby9o7Q",
   authDomain: "konvo-endgame.firebaseapp.com",
@@ -729,6 +800,10 @@ const firebaseConfig = {
 };
 
 const appStartTime = Date.now();
+
+// ═══════════════════════════════════════════════════════════════════
+// DOM ELEMENT REFERENCES
+// ═══════════════════════════════════════════════════════════════════
 
 const elements = {
   feedContainer: document.getElementById("feedContainer"),
@@ -791,6 +866,10 @@ const {
 let menuPin = null;
 let menuBan = null;
 
+// ═══════════════════════════════════════════════════════════════════
+// APPLICATION STATE
+// ═══════════════════════════════════════════════════════════════════
+
 const state = {
   app: null,
   db: null,
@@ -825,11 +904,19 @@ const state = {
   isDeviceBanned: false,
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// SPAM TRACKING
+// ═══════════════════════════════════════════════════════════════════
+
 const spamTracker = {
   messageTimestamps: [],      
   warningShown: false,        
   lastCleanup: Date.now(),    
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// LISTENER UNSUBSCRIBERS
+// ═══════════════════════════════════════════════════════════════════
 
 const unsubscribers = {
   confessions: () => {},
@@ -841,6 +928,10 @@ const unsubscribers = {
   deviceBanCheck: () => {},
   ipBanCheck: () => {},
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════════
 
 const REACTION_TYPES = Object.freeze({
   thumbsup: "👍",
@@ -868,6 +959,10 @@ const SPAM_CONFIG = Object.freeze({
   WARNING_THRESHOLD: 7,       
   CLEANUP_INTERVAL: 30000,    
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
 
 function getUserColor(userId) {
   if (!userId || typeof userId !== 'string') return USER_COLORS[0];
@@ -936,6 +1031,10 @@ function createActionContainer() {
   return confirmModalActionContainer;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// CLEANUP FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+
 function cleanupAllListeners() {
   Object.entries(unsubscribers).forEach(([key, unsub]) => {
     if (typeof unsub === 'function') {
@@ -965,6 +1064,10 @@ function cleanupNonBanListeners() {
     }
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SPAM DETECTION
+// ═══════════════════════════════════════════════════════════════════
 
 function cleanupSpamTracker() {
   const now = Date.now();
@@ -1008,7 +1111,7 @@ function checkSpamStatus() {
     const remaining = SPAM_CONFIG.MAX_MESSAGES - messageCount;
     return { 
       allowed: true, 
-      warning: ` Spamming = Getting Banned ⚠️.`
+      warning: `Spamming = Getting Banned ⚠️.`
     };
   }
 
@@ -1216,6 +1319,10 @@ function showSpamWarning(message) {
   }, 4000);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// CHARACTER COUNTER
+// ═══════════════════════════════════════════════════════════════════
+
 function updateCharacterCounter(input, counter) {
   if (!input || !counter) return;
 
@@ -1240,6 +1347,10 @@ function updateCharacterCounter(input, counter) {
     counter.classList.add('warning');
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SERVICE WORKER & CONNECTION MONITORING
+// ═══════════════════════════════════════════════════════════════════
 
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
@@ -1275,6 +1386,10 @@ function setupConnectionMonitor() {
     showToast("You're offline. Messages will sync when connected.", "info");
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// NOTIFICATION HANDLING
+// ═══════════════════════════════════════════════════════════════════
 
 function setupNotificationButton() {
   if (!notificationButton) return;
@@ -1358,6 +1473,10 @@ async function showNotification(title, body) {
     console.error('Notification error:', e);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// ADMIN MENU SETUP
+// ═══════════════════════════════════════════════════════════════════
 
 function setupAdminMenu() {
   const ul = contextMenu?.querySelector("ul");
@@ -1558,6 +1677,10 @@ async function toggleBanUser() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// FIREBASE INITIALIZATION
+// ═══════════════════════════════════════════════════════════════════
+
 async function initFirebase() {
   const globalTimeout = setTimeout(() => {
     console.warn('Initialization timeout - showing app anyway');
@@ -1692,6 +1815,10 @@ async function checkAdminStatus() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// REALTIME LISTENERS
+// ═══════════════════════════════════════════════════════════════════
+
 function listenForPinnedMessages() {
   if (typeof unsubscribers.pinned === 'function') {
     unsubscribers.pinned();
@@ -1824,6 +1951,10 @@ function listenForDeviceBans() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// BAN SCREENS
+// ═══════════════════════════════════════════════════════════════════
+
 function showUnbannedScreen() {
   const banOverlay = document.getElementById('banOverlayScreen');
   if (banOverlay) banOverlay.remove();
@@ -1919,6 +2050,10 @@ function showBannedScreen() {
   document.body.appendChild(overlay);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// SCROLL HANDLING
+// ═══════════════════════════════════════════════════════════════════
+
 function initScrollObserver() {
   const options = { 
     root: feedContainer, 
@@ -1948,7 +2083,7 @@ function updateScrollButton() {
     scrollToBottomBtn.classList.remove("hidden");
     scrollToBottomBtn.style.display = "flex";
 
-    if (state.unreadMessages > 0) {
+        if (state.unreadMessages > 0) {
       newMsgCount.classList.remove("hidden");
       setTextSafely(newMsgCount, 
         state.unreadMessages > 99 ? "99+" : String(state.unreadMessages)
@@ -1966,6 +2101,10 @@ function scrollToBottom() {
   state.unreadMessages = 0;
   updateScrollButton();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// USER PROFILE MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════
 
 function requestUserProfile(userId) {
   if (!userId || typeof userId !== 'string') return;
@@ -2130,6 +2269,10 @@ async function loadUserProfile() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PROFILE MODAL HANDLING
+// ═══════════════════════════════════════════════════════════════════
+
 async function handleProfileSave() {
   if (!state.db || !state.currentUserId) {
     showToast("Not connected. Please refresh the page.", "error");
@@ -2280,6 +2423,10 @@ function closeProfileModal() {
   profileModal.setAttribute("aria-hidden", "true");
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// EDIT MODAL HANDLING
+// ═══════════════════════════════════════════════════════════════════
+
 function showEditModal(docId, collectionName, currentText) {
   if (!editModal || !modalEditTextArea) return;
 
@@ -2342,6 +2489,10 @@ async function saveEdit() {
     editModalSaveButton.classList.remove("loading");
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// CONFIRM MODAL HANDLING
+// ═══════════════════════════════════════════════════════════════════
 
 function showConfirmModal(text, isMine, docId) {
   if (!confirmModal || !confirmModalActionContainer) return;
@@ -2413,6 +2564,10 @@ function closeConfirmModal() {
   confirmModal.classList.remove("is-open");
   confirmModal.setAttribute("aria-hidden", "true");
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// REACTIONS HANDLING
+// ═══════════════════════════════════════════════════════════════════
 
 async function toggleReaction(docId, collectionName, reactionType, hasReacted) {
   if (!state.db || !state.currentUserId) return;
@@ -2525,6 +2680,10 @@ function updateReactionUI(bubble, reactionType, isAdding, collectionName) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// CONTEXT MENU (DROPDOWN) HANDLING
+// ═══════════════════════════════════════════════════════════════════
+
 function showDropdownMenu(event, data) {
   event.stopPropagation();
 
@@ -2607,6 +2766,10 @@ function hideDropdownMenu() {
     contextMenu.classList.remove("is-open");
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SELECTION MODE
+// ═══════════════════════════════════════════════════════════════════
 
 function handleMessageClick(bubble) {
   if (!state.isSelectionMode) return;
@@ -2766,6 +2929,10 @@ async function handleMultiDelete() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PAGE NAVIGATION
+// ═══════════════════════════════════════════════════════════════════
+
 function showPage(page) {
   if (page !== 'chat' && page !== 'confessions') {
     page = 'chat';
@@ -2843,6 +3010,10 @@ function showPage(page) {
     listenForTyping();
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// FEED RENDERING
+// ═══════════════════════════════════════════════════════════════════
 
 function safeRenderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
   try {
@@ -3382,11 +3553,11 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
   });
 
   const scrollAnchor = document.createElement("div");
-scrollAnchor.id = "scrollAnchor";
-scrollAnchor.style.height = "4px";
-scrollAnchor.style.width = "100%";
-scrollAnchor.style.flexShrink = "0";
-feedContainer.appendChild(scrollAnchor);
+  scrollAnchor.id = "scrollAnchor";
+  scrollAnchor.style.height = "4px";
+  scrollAnchor.style.width = "100%";
+  scrollAnchor.style.flexShrink = "0";
+  feedContainer.appendChild(scrollAnchor);
 
   if (state.bottomObserver) {
     state.bottomObserver.disconnect();
@@ -3418,6 +3589,10 @@ feedContainer.appendChild(scrollAnchor);
     feedContainer.scrollTop = prevScrollTop;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// MESSAGE POSTING
+// ═══════════════════════════════════════════════════════════════════
 
 async function postMessage(collectionRef, input) {
   if (!state.db || !state.currentUserId) {
@@ -3458,6 +3633,8 @@ async function postMessage(collectionRef, input) {
 
   if (!validation.valid) {
     showToast(validation.error, "error");
+    // Keep focus on input even on validation error
+    input.focus({ preventScroll: true });
     return;
   }
 
@@ -3469,22 +3646,22 @@ async function postMessage(collectionRef, input) {
     document.getElementById('chatButton') : 
     document.getElementById('confessionButton');
 
+  // Store reference to input for refocusing later
+  const inputToRefocus = input;
+
   const resetUI = () => {
     if (input) {
       input.disabled = false;
-      input.focus();
     }
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.classList.remove('loading');
-      submitBtn.textContent = isChat ? 'SEND' : 'POST';
+      submitBtn.textContent = isChat ? 'SEND ✈️' : 'POST ✍️';
     }
   };
 
-  if (input) {
-    input.disabled = true;
-  }
-
+  // Don't disable input - just disable the button to prevent double-submit
+  // This helps keep the keyboard open
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.classList.add('loading');
@@ -3522,6 +3699,7 @@ async function postMessage(collectionRef, input) {
 
     recordMessage();
 
+    // Clear input value
     if (input) {
       input.value = "";
     }
@@ -3538,6 +3716,15 @@ async function postMessage(collectionRef, input) {
     console.log('Message flow completed');
 
     resetUI();
+    
+    // CRITICAL: Refocus input to prevent keyboard from closing on mobile
+    // Using requestAnimationFrame ensures this happens after all DOM updates
+    requestAnimationFrame(() => {
+      if (inputToRefocus) {
+        // preventScroll: true prevents the page from jumping
+        inputToRefocus.focus({ preventScroll: true });
+      }
+    });
 
   } catch (error) {
     console.error('Post error:', error);
@@ -3553,8 +3740,19 @@ async function postMessage(collectionRef, input) {
     }
 
     resetUI();
+    
+    // Refocus even on error
+    requestAnimationFrame(() => {
+      if (inputToRefocus) {
+        inputToRefocus.focus({ preventScroll: true });
+      }
+    });
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// REPLY MODE
+// ═══════════════════════════════════════════════════════════════════
 
 function startReplyMode(messageData) {
   const repliedUserId = messageData.userId || 
@@ -3591,6 +3789,24 @@ function cancelReplyMode() {
 // EVENT LISTENERS
 // ═══════════════════════════════════════════════════════════════════
 
+// Prevent keyboard flickering on send - prevent buttons from stealing focus
+document.getElementById('chatButton')?.addEventListener('mousedown', (e) => {
+  e.preventDefault(); // Prevents focus from leaving the input
+}, { passive: false });
+
+document.getElementById('chatButton')?.addEventListener('touchstart', (e) => {
+  e.preventDefault(); // Prevents focus from leaving the input on mobile
+}, { passive: false });
+
+document.getElementById('confessionButton')?.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+}, { passive: false });
+
+document.getElementById('confessionButton')?.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+}, { passive: false });
+
+// Close reaction pickers and context menu when clicking outside
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".side-action-btn") && !e.target.closest(".reaction-picker")) {
     document.querySelectorAll(".reaction-picker").forEach(p => {
@@ -3604,6 +3820,7 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// Update timestamps every minute
 setInterval(() => {
   document.querySelectorAll('.inner-timestamp').forEach(el => {
     const ts = parseInt(el.dataset.ts, 10);
@@ -3614,18 +3831,23 @@ setInterval(() => {
   });
 }, 60000);
 
+// Scroll button
 scrollToBottomBtn?.addEventListener("click", scrollToBottom);
 
+// Form submissions
 confessionForm?.addEventListener("submit", (e) => {
   e.preventDefault();
+  e.stopPropagation();
   postMessage(state.confessionsCollection, confessionInput);
 });
 
 chatForm?.addEventListener("submit", (e) => {
   e.preventDefault();
+  e.stopPropagation();
   postMessage(state.chatCollection, chatInput);
 });
 
+// Navigation
 navConfessions?.addEventListener("click", () => showPage("confessions"));
 navChat?.addEventListener("click", () => showPage("chat"));
 
@@ -3643,15 +3865,19 @@ navChat?.addEventListener("keydown", (e) => {
   }
 });
 
+// Profile modal
 profileButton?.addEventListener("click", openProfileModal);
 modalCloseButton?.addEventListener("click", closeProfileModal);
 modalSaveButton?.addEventListener("click", handleProfileSave);
 
+// Edit modal
 editModalCancelButton?.addEventListener("click", closeEditModal);
 editModalSaveButton?.addEventListener("click", saveEdit);
 
+// Confirm modal
 confirmModalNoButton?.addEventListener("click", closeConfirmModal);
 
+// Context menu actions
 menuEdit?.addEventListener("click", () => {
   if (state.currentContextMenuData) {
     showEditModal(
@@ -3680,11 +3906,14 @@ menuSelect?.addEventListener("click", () => {
   hideDropdownMenu();
 });
 
+// Selection mode
 selectionCancel?.addEventListener("click", exitSelectionMode);
 selectionDelete?.addEventListener("click", handleMultiDelete);
 
+// Reply bar
 cancelReply?.addEventListener("click", cancelReplyMode);
 
+// Input event handlers
 confessionInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -3713,6 +3942,7 @@ confessionInput?.addEventListener("input", () => {
   updateCharacterCounter(confessionInput, confessionCharCount);
 });
 
+// Keyboard shortcuts
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (profileModal?.classList.contains("is-open")) {
@@ -3731,6 +3961,7 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// Visibility change handler
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     if (state.userIsAtBottom) {
@@ -3740,12 +3971,14 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// Before unload - clear typing status
 window.addEventListener("beforeunload", () => {
   if (state.db && state.currentUserId) {
     updateTypingStatus(false);
   }
 });
 
+// Cleanup on page unload
 window.addEventListener('unload', () => {
   cleanupAllListeners();
 });
