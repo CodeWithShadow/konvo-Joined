@@ -3789,22 +3789,17 @@ function cancelReplyMode() {
 // EVENT LISTENERS
 // ═══════════════════════════════════════════════════════════════════
 
-// Prevent keyboard flickering on send - prevent buttons from stealing focus
-document.getElementById('chatButton')?.addEventListener('mousedown', (e) => {
-  e.preventDefault(); // Prevents focus from leaving the input
-}, { passive: false });
+// Prevent keyboard flickering - desktop only fix
+// Mobile will work naturally, and we refocus after send in postMessage()
+if (window.matchMedia('(hover: hover)').matches) {
+  document.getElementById('chatButton')?.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+  }, { passive: false });
 
-document.getElementById('chatButton')?.addEventListener('touchstart', (e) => {
-  e.preventDefault(); // Prevents focus from leaving the input on mobile
-}, { passive: false });
-
-document.getElementById('confessionButton')?.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-}, { passive: false });
-
-document.getElementById('confessionButton')?.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-}, { passive: false });
+  document.getElementById('confessionButton')?.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+}
 
 // Close reaction pickers and context menu when clicking outside
 document.addEventListener("click", (e) => {
