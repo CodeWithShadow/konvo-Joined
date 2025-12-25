@@ -379,6 +379,23 @@ a:focus-visible {
   overflow: visible;
 }
 
+@media (max-width: 640px) {
+  .message-bubble {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+    min-width: 100px;
+  }
+  
+  .bubble-footer {
+    margin-top: 4px;
+    height: 12px;
+  }
+  
+  .inner-timestamp {
+    font-size: 0.6rem;
+  }
+}
+
 .message-bubble:hover {
   border-color: #444;
   background-color: #232323;
@@ -802,7 +819,7 @@ body.selection-mode .message-bubble {
 
 .nav-item {
   cursor: pointer;
-  padding: 8px 16px;
+  /* padding: 8px 16px; handled by tailwind classes */
   border-bottom: 2px solid transparent;
   transition: all 0.3s ease;
   color: var(--text-muted);
@@ -844,6 +861,12 @@ body.selection-mode .message-bubble {
   justify-content: space-between;
   align-items: center;
   animation: smoothSlideUp 0.2s var(--ease-out-expo);
+}
+
+@media (max-width: 640px) {
+  #replyBar {
+    padding: 0.5rem 0.75rem;
+  }
 }
 
 #replyBar.show {
@@ -1084,16 +1107,16 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   26. INPUT FORMS (FIXED)
+   26. INPUT FORMS (RESPONSIVE FIX)
    ============================ */
 
 #chatForm,
 #confessionForm {
-  padding: 12px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
-  background-color: rgba(10, 10, 10, 0.98); /* Slightly more opaque */
+  /* Responsive padding - let Tailwind classes work */
+  /* Mobile: p-1.5 (6px), Desktop: p-3 (12px) */
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  background-color: rgba(10, 10, 10, 0.98);
   border-top: 1px solid var(--border-color);
-  /* Add these for better positioning */
   position: fixed;
   bottom: 0;
   left: 0;
@@ -1101,18 +1124,35 @@ body.selection-mode .message-bubble {
   z-index: 50;
 }
 
+@media (min-width: 640px) {
+  #chatForm,
+  #confessionForm {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
 #chatInput,
 #confessionInput {
-  height: 45px !important;
-  min-height: 45px;
-  max-height: 120px;
-  padding: 10px 16px;
+  /* Responsive height - smaller on mobile */
+  height: 36px;
+  min-height: 36px;
+  max-height: 100px;
   border-radius: var(--radius-md);
   overflow: hidden;
   background-color: var(--surface);
   resize: none;
   overflow-wrap: break-word;
   word-break: break-word;
+  /* Let Tailwind handle padding */
+}
+
+@media (min-width: 640px) {
+  #chatInput,
+  #confessionInput {
+    height: 44px;
+    min-height: 44px;
+    max-height: 120px;
+  }
 }
 
 /* ============================

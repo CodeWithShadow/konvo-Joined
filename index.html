@@ -54,17 +54,17 @@
 
     <!-- Header -->
     <header
-      class="flex justify-between items-center px-3 py-3 border-b border-konvo-border bg-konvo-bg gap-2 z-10 h-14"
+      class="flex justify-between items-center px-1.5 py-1.5 sm:px-3 sm:py-3 border-b border-konvo-border bg-konvo-bg gap-1 sm:gap-2 z-10 h-10 sm:h-14"
     >
       <h1 class="text-base sm:text-2xl font-bold text-konvo-text tracking-tight shrink-0">
-        <img src="konvo.png" alt="Konvo" class="h-8" />
+        <img src="konvo.png" alt="Konvo" class="h-5 sm:h-8" />
       </h1>
       
-      <div class="flex items-center gap-2 overflow-visible flex-1 justify-end">
-        <nav class="flex text-[10px] sm:text-base font-medium gap-1 sm:gap-4 shrink">
+      <div class="flex items-center gap-1.5 overflow-visible flex-1 justify-end">
+        <nav class="flex text-[9px] sm:text-base font-medium gap-0.5 sm:gap-4 shrink">
           <div 
             id="navConfessions" 
-            class="nav-item px-2 py-1"
+            class="nav-item px-1.5 py-0.5 sm:px-2 sm:py-1"
             role="button"
             tabindex="0"
             aria-label="View Confessions"
@@ -73,7 +73,7 @@
           </div>
           <div 
             id="navChat" 
-            class="nav-item active px-2 py-1"
+            class="nav-item active px-1.5 py-0.5 sm:px-2 sm:py-1"
             role="button"
             tabindex="0"
             aria-label="View Chat"
@@ -82,19 +82,19 @@
           </div>
         </nav>
 
-        <div class="flex items-center gap-1 sm:gap-2 shrink-0">
+        <div class="flex items-center gap-0.5 sm:gap-2 shrink-0">
           <!-- Notification Button -->
           <button
             id="notificationButton"
             type="button"
-            class="p-2 rounded-full hover:bg-konvo-surface transition text-konvo-text flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            class="p-0.5 sm:p-2 rounded-full hover:bg-konvo-surface transition text-konvo-text flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             title="Toggle Notifications"
             aria-label="Toggle Notifications"
           >
             <svg 
               xmlns="http://www.w3.org/2000/svg" 
-              width="18" 
-              height="18" 
+              width="16" 
+              height="16" 
               viewBox="0 0 24 24" 
               fill="none" 
               stroke="currentColor" 
@@ -115,13 +115,13 @@
           <button
             id="profileButton"
             type="button"
-            class="p-2 rounded-full hover:bg-konvo-surface transition text-konvo-text flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            class="p-0.5 sm:p-2 rounded-full hover:bg-konvo-surface transition text-konvo-text flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             title="Edit Profile"
             aria-label="Edit Profile"
           >
             <svg
-              width="18"
-              height="18"
+              width="16"
+              height="16"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -141,26 +141,26 @@
     </header>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col overflow-x-hidden relative pb-[66px]">
+    <main class="flex-1 flex flex-col overflow-x-hidden relative pb-12 sm:pb-16">
       <!-- Pinned Message Bar -->
       <div 
         id="pinnedMessageBar" 
-        class="hidden flex items-center gap-3 px-4 py-2 bg-konvo-surface border-b border-konvo-border z-20 shadow-lg cursor-pointer hover:bg-konvo-surface/90 transition-colors shrink-0"
+        class="hidden flex items-center gap-2 px-2 py-1.5 sm:gap-3 sm:px-4 sm:py-2 bg-konvo-surface border-b border-konvo-border z-20 shadow-lg cursor-pointer hover:bg-konvo-surface/90 transition-colors shrink-0"
         role="button"
         tabindex="0"
         aria-label="View pinned message"
       >
-        <span class="text-lg shrink-0" aria-hidden="true">📌</span>
+        <span class="text-base sm:text-lg shrink-0" aria-hidden="true">📌</span>
         <div class="flex flex-col overflow-hidden">
-          <span class="text-[10px] text-yellow-400 font-bold uppercase tracking-wider">Pinned Message</span>
-          <p id="pinnedMessageText" class="text-sm text-konvo-text truncate"></p>
+          <span class="text-[9px] sm:text-[10px] text-yellow-400 font-bold uppercase tracking-wider">Pinned Message</span>
+          <p id="pinnedMessageText" class="text-xs sm:text-sm text-konvo-text truncate"></p>
         </div>
       </div>
 
       <!-- Feed Container -->
       <div
         id="feedContainer"
-        class="flex-1 flex flex-col p-2 sm:p-4 gap-2 overflow-y-auto"
+        class="flex-1 flex flex-col p-1.5 gap-1.5 sm:p-4 sm:gap-2 overflow-y-auto"
         role="log"
         aria-live="polite"
         aria-label="Messages"
@@ -198,18 +198,18 @@
       <!-- Selection Bar -->
       <div
         id="selectionBar"
-        class="hidden flex justify-between items-center bg-konvo-surface border-t border-konvo-border p-3"
+        class="hidden flex justify-between items-center bg-konvo-surface border-t border-konvo-border p-2 sm:p-3"
         role="toolbar"
         aria-label="Message selection actions"
       >
-        <span id="selectionCount" class="text-base text-konvo-text font-medium" aria-live="polite">
+        <span id="selectionCount" class="text-sm sm:text-base text-konvo-text font-medium" aria-live="polite">
           0 selected
         </span>
         <div class="flex gap-4">
           <button
             id="selectionCancel"
             type="button"
-            class="text-sm font-medium text-konvo-muted hover:text-konvo-text transition"
+            class="text-xs sm:text-sm font-medium text-konvo-muted hover:text-konvo-text transition"
             aria-label="Cancel selection"
           >
             CANCEL
@@ -217,7 +217,7 @@
           <button
             id="selectionDelete"
             type="button"
-            class="text-sm font-bold text-red-500 hover:text-red-400 transition"
+            class="text-xs sm:text-sm font-bold text-red-500 hover:text-red-400 transition"
             aria-label="Delete selected messages"
           >
             DELETE
@@ -253,80 +253,80 @@
     </main>
 
     <!-- Confession Form -->
-    <form 
-      id="confessionForm" 
-      class="hidden items-center gap-3 border-t border-konvo-border p-3 fixed bottom-0 left-0 right-0 z-10 bg-konvo-bg"
-      aria-label="Post a confession"
-    >
-      <label for="confessionInput" class="sr-only">Type your confession</label>
+<form 
+  id="confessionForm" 
+  class="hidden items-center gap-1.5 sm:gap-3 border-t border-konvo-border p-1.5 sm:p-3 fixed bottom-0 left-0 right-0 z-10 bg-konvo-bg"
+  aria-label="Post a confession"
+>
+  <label for="confessionInput" class="sr-only">Type your confession</label>
 
-      <div class="relative flex-1">
-        <textarea
-          id="confessionInput"
-          rows="1"
-          class="w-full resize-none focus:outline-none text-sm p-3 pr-16 bg-konvo-bg border border-konvo-border rounded-lg"
-          placeholder="Type your confession... 🤫"
-          required
-          maxlength="500"
-          autocomplete="off"
-          spellcheck="true"
-        ></textarea>
+  <div class="relative flex-1">
+    <textarea
+      id="confessionInput"
+      rows="1"
+      class="w-full resize-none focus:outline-none text-xs sm:text-sm py-1.5 sm:py-2.5 px-2.5 sm:px-3 pr-14 sm:pr-16 bg-konvo-bg border border-konvo-border rounded-lg leading-normal"
+      placeholder="Type your confession... 🤫"
+      required
+      maxlength="500"
+      autocomplete="off"
+      spellcheck="true"
+    ></textarea>
 
-        <!-- Character Counter -->
-        <span 
-          id="confessionCharCount" 
-          class="char-counter"
-          aria-live="polite"
-          aria-label="Character count"
-        >0/500</span>
-      </div>
-      
-      <button
-        id="confessionButton"
-        type="submit"
-        class="px-5 py-3 rounded-lg font-bold text-sm bg-konvo-accent-vibrant text-black hover:bg-konvo-accent-vibrant/90 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
-      >
-        POST ✍️
-      </button>
-    </form>
+    <!-- Character Counter -->
+    <span 
+      id="confessionCharCount" 
+      class="char-counter"
+      aria-live="polite"
+      aria-label="Character count"
+    >0/500</span>
+  </div>
+  
+  <button
+    id="confessionButton"
+    type="submit"
+    class="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent-vibrant text-black hover:bg-konvo-accent-vibrant/90 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white whitespace-nowrap"
+  >
+    POST ✍️
+  </button>
+</form>
 
     <!-- Chat Form -->
-    <form 
-      id="chatForm" 
-      class="flex items-center gap-3 border-t border-konvo-border p-3 fixed bottom-0 left-0 right-0 z-10 bg-konvo-bg"
-      aria-label="Send a message"
-    >
-      <label for="chatInput" class="sr-only">Type a message</label>
+<form 
+  id="chatForm" 
+  class="flex items-center gap-1.5 sm:gap-3 border-t border-konvo-border p-1.5 sm:p-3 fixed bottom-0 left-0 right-0 z-10 bg-konvo-bg"
+  aria-label="Send a message"
+>
+  <label for="chatInput" class="sr-only">Type a message</label>
 
-      <div class="relative flex-1">
-        <textarea
-          id="chatInput"
-          rows="1"
-          class="w-full resize-none focus:outline-none text-sm p-3 pr-16 bg-konvo-bg border border-konvo-border rounded-lg"
-          placeholder="Type a message... 💬"
-          required
-          maxlength="500"
-          autocomplete="off"
-          spellcheck="true"
-        ></textarea>
+  <div class="relative flex-1">
+    <textarea
+      id="chatInput"
+      rows="1"
+      class="w-full resize-none focus:outline-none text-xs sm:text-sm py-1.5 sm:py-2.5 px-2.5 sm:px-3 pr-14 sm:pr-16 bg-konvo-bg border border-konvo-border rounded-lg leading-normal"
+      placeholder="Type a message... 💬"
+      required
+      maxlength="500"
+      autocomplete="off"
+      spellcheck="true"
+    ></textarea>
 
-        <!-- Character Counter -->
-        <span 
-          id="chatCharCount" 
-          class="char-counter"
-          aria-live="polite"
-          aria-label="Character count"
-        >0/500</span>
-      </div>
-      
-      <button
-        id="chatButton"
-        type="submit"
-        class="px-5 py-3 rounded-lg font-bold text-sm bg-konvo-accent-vibrant text-black hover:bg-konvo-accent-vibrant/90 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
-      >
-        SEND ✈️
-      </button>
-    </form>
+    <!-- Character Counter -->
+    <span 
+      id="chatCharCount" 
+      class="char-counter"
+      aria-live="polite"
+      aria-label="Character count"
+    >0/500</span>
+  </div>
+  
+  <button
+    id="chatButton"
+    type="submit"
+    class="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent-vibrant text-black hover:bg-konvo-accent-vibrant/90 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white whitespace-nowrap"
+  >
+    SEND ✈️
+  </button>
+</form>
 
     <!-- Profile Modal -->
     <div 
@@ -338,9 +338,9 @@
       aria-hidden="true"
     >
       <div
-        class="modal-content bg-konvo-surface p-6 rounded-xl border border-konvo-border w-full max-w-sm flex flex-col gap-4 shadow-2xl"
+        class="modal-content bg-konvo-surface p-4 sm:p-6 rounded-xl border border-konvo-border w-full max-w-xs sm:max-w-sm flex flex-col gap-4 shadow-2xl"
       >
-        <h2 id="profileModalTitle" class="text-xl font-bold text-konvo-text">👤 Edit Profile</h2>
+        <h2 id="profileModalTitle" class="text-lg sm:text-xl font-bold text-konvo-text">👤 Edit Profile</h2>
         <div class="flex flex-col gap-2">
           <label
             for="modalUsernameInput"
@@ -352,7 +352,7 @@
             type="text"
             id="modalUsernameInput"
             placeholder="Enter a cool username"
-            class="w-full p-3 rounded-lg focus:outline-none bg-konvo-bg text-konvo-text border border-konvo-border text-sm focus-visible:ring-2 focus-visible:ring-white"
+            class="w-full p-2 sm:p-3 rounded-lg focus:outline-none bg-konvo-bg text-konvo-text border border-konvo-border text-sm focus-visible:ring-2 focus-visible:ring-white"
             maxlength="30"
             autocomplete="off"
             autocapitalize="off"
@@ -365,14 +365,14 @@
           <button
             id="modalCloseButton"
             type="button"
-            class="flex-1 px-4 py-2 rounded-lg font-medium text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition"
+            class="flex-1 px-3 py-2 rounded-lg font-medium text-xs sm:text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition"
           >
             Cancel
           </button>
           <button
             id="modalSaveButton"
             type="button"
-            class="flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-konvo-accent text-black hover:bg-konvo-accent/90 transition"
+            class="flex-1 px-3 py-2 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent text-black hover:bg-konvo-accent/90 transition"
           >
             Save
           </button>
@@ -390,14 +390,14 @@
       aria-hidden="true"
     >
       <div
-        class="modal-content bg-konvo-surface p-6 rounded-xl border border-konvo-border w-full max-w-sm flex flex-col gap-4 shadow-2xl"
+        class="modal-content bg-konvo-surface p-4 sm:p-6 rounded-xl border border-konvo-border w-full max-w-xs sm:max-w-sm flex flex-col gap-4 shadow-2xl"
       >
-        <h2 id="editModalTitle" class="text-xl font-bold text-konvo-text">✏️ Edit Message</h2>
+        <h2 id="editModalTitle" class="text-lg sm:text-xl font-bold text-konvo-text">✏️ Edit Message</h2>
         <label for="modalEditTextArea" class="sr-only">Edit your message</label>
         <textarea
           id="modalEditTextArea"
           rows="4"
-          class="w-full p-3 rounded-lg resize-none focus:outline-none bg-konvo-bg text-konvo-text border border-konvo-border text-sm focus-visible:ring-2 focus-visible:ring-white"
+          class="w-full p-2 sm:p-3 rounded-lg resize-none focus:outline-none bg-konvo-bg text-konvo-text border border-konvo-border text-sm focus-visible:ring-2 focus-visible:ring-white"
           maxlength="500"
           spellcheck="true"
         ></textarea>
@@ -405,14 +405,14 @@
           <button
             id="editModalCancelButton"
             type="button"
-            class="flex-1 px-4 py-2 rounded-lg font-medium text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition"
+            class="flex-1 px-3 py-2 rounded-lg font-medium text-xs sm:text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition"
           >
             Cancel
           </button>
           <button
             id="editModalSaveButton"
             type="button"
-            class="flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-konvo-accent text-black hover:bg-konvo-accent/90 transition"
+            class="flex-1 px-3 py-2 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent text-black hover:bg-konvo-accent/90 transition"
           >
             Save
           </button>
@@ -431,15 +431,15 @@
       aria-hidden="true"
     >
       <div
-        class="modal-content bg-konvo-surface p-6 rounded-xl border border-konvo-border w-full max-w-sm flex flex-col gap-4 shadow-2xl"
+        class="modal-content bg-konvo-surface p-4 sm:p-6 rounded-xl border border-konvo-border w-full max-w-xs sm:max-w-sm flex flex-col gap-4 shadow-2xl"
       >
-        <h2 id="confirmModalTitle" class="text-lg font-bold text-konvo-text">🤔 Confirm</h2>
-        <p id="confirmModalText" class="text-sm text-konvo-muted">Are you sure?</p>
+        <h2 id="confirmModalTitle" class="text-base sm:text-lg font-bold text-konvo-text">🤔 Confirm</h2>
+        <p id="confirmModalText" class="text-xs sm:text-sm text-konvo-muted">Are you sure?</p>
         <div class="flex gap-3 mt-4">
           <button
             id="confirmModalNoButton"
             type="button"
-            class="flex-1 px-4 py-2 rounded-lg font-medium text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition"
+            class="flex-1 px-3 py-2 rounded-lg font-medium text-xs sm:text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition"
           >
             Cancel
           </button>
