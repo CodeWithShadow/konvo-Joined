@@ -817,12 +817,13 @@ function createKebabIcon() {
 // ═══════════════════════════════════════════════════════════════════
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDOiYfkCf3Y1Fq7625HimKsm3wYwjBWoxc",
-  authDomain: "konvo-d357d.firebaseapp.com",
-  projectId: "konvo-d357d",
-  storageBucket: "konvo-d357d.firebasestorage.app",
-  messagingSenderId: "924631278394",
-  appId: "1:924631278394:web:84b8642b5366d869926603"
+  apiKey: "AIzaSyAQ2oBI80ESVFa-EQ9FhHYL4QQAUSiHado",
+  authDomain: "konvo-base-varient.firebaseapp.com",
+  projectId: "konvo-base-varient",
+  storageBucket: "konvo-base-varient.firebasestorage.app",
+  messagingSenderId: "655355743928",
+  appId: "1:655355743928:web:f8a9a7c7ba5d6e1503ee4d",
+  measurementId: "G-DTC5169FP8"
 };
 const appStartTime = Date.now();
 
