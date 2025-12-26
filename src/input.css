@@ -51,6 +51,38 @@
   --z-tooltip: 1100;
 }
 
+/* Geometric Minimal Pattern */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1' stroke-opacity='1'%3E%3Ccircle cx='40' cy='40' r='15'/%3E%3Ccircle cx='40' cy='40' r='8'/%3E%3Crect x='10' y='10' width='10' height='10' rx='2'/%3E%3Crect x='60' y='60' width='10' height='10' rx='2'/%3E%3Cpolygon points='70,15 75,25 65,25'/%3E%3Cpolygon points='10,65 15,55 5,55'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: 
+    linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,0.03) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.03) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.03) 75%);
+  background-size: 60px 60px;
+}
+
 /* Add after your :root section */
 html, body {
   height: 100%;
@@ -429,11 +461,11 @@ a:focus-visible {
    ============================ */
 
 .message-bubble {
-  background-color: var(--surface);
+  background-color: rgba(28, 28, 28, 0.5); /* Changed from var(--surface) to semi-transparent */
   border: 1px solid var(--border-color);
   word-wrap: break-word;
   white-space: pre-wrap;
-  overflow-wrap: anywhere; /* stronger than break-word for long unbroken strings */
+  overflow-wrap: anywhere;
   word-break: break-word;
   hyphens: auto;
   padding: 0.75rem 1rem;
@@ -450,9 +482,9 @@ a:focus-visible {
   border-radius: var(--radius-lg);
   animation: smoothSlideUp 0.4s var(--ease-out-expo) forwards;
   will-change: transform, opacity;
-  /* FIXED: Removed contain: content - was clipping kebab button */
-  /* FIXED: Ensure overflow is visible */
   overflow: visible;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 @media (max-width: 640px) {
@@ -474,7 +506,7 @@ a:focus-visible {
 
 .message-bubble:hover {
   border-color: #444;
-  background-color: #232323;
+  background-color: rgba(35, 35, 35, 0.6); /* Changed from #232323 to semi-transparent */
 }
 
 body.selection-mode .message-bubble {
@@ -487,13 +519,16 @@ body.selection-mode .message-bubble {
 }
 
 .my-message {
-  background-color: #262626;
   border: 1px solid var(--border-color);
   align-self: flex-end;
+  /* Remove any background-color property - JS handles it now */
 }
 
+.my-message:hover {
+  border-color: #444;
+}
 .selected-message {
-  background-color: #333 !important;
+  background-color: rgba(51, 51, 51, 0.7) !important; /* Changed from #333 to semi-transparent */
   border-color: var(--text-main) !important;
   transform: scale(1.01);
 }

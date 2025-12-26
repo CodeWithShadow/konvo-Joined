@@ -3307,10 +3307,13 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
     bubble.dataset.timestamp = data.timestamp ? String(data.timestamp.toMillis()) : String(Date.now());
 
     if (!isMine) {
-      bubble.style.borderLeft = `3px solid ${userColor}`;
-      bubble.style.background = `linear-gradient(90deg, ${userColor}10, transparent)`;
-    }
-
+  bubble.style.borderLeft = `3px solid ${userColor}`;
+  bubble.style.background = `linear-gradient(90deg, ${userColor}10, transparent)`;
+} else {
+  // Sent messages - mirror the received bubble styling
+  bubble.style.borderRight = `3px solid ${userColor}`;
+  bubble.style.background = `linear-gradient(270deg, ${userColor}10, transparent)`;
+}
     if (state.isSelectionMode && state.selectedMessages.has(docInstance.id)) {
       bubble.classList.add("selected-message");
     }
