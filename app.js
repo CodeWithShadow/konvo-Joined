@@ -1,6 +1,32 @@
 'use strict';
 
 // ═══════════════════════════════════════════════════════════════════
+// DISABLE ALL CONSOLE OUTPUT IN PRODUCTION
+// ═══════════════════════════════════════════════════════════════════
+
+(function() {
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+  console.info = () => {};
+  console.debug = () => {};
+  console.trace = () => {};
+  console.dir = () => {};
+  console.dirxml = () => {};
+  console.table = () => {};
+  console.group = () => {};
+  console.groupEnd = () => {};
+  console.groupCollapsed = () => {};
+  console.time = () => {};
+  console.timeEnd = () => {};
+  console.timeLog = () => {};
+  console.assert = () => {};
+  console.count = () => {};
+  console.countReset = () => {};
+  console.clear = () => {};
+})();
+
+// ═══════════════════════════════════════════════════════════════════
 // MOBILE VIEWPORT HANDLING (KEYBOARD FIX)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -791,14 +817,13 @@ function createKebabIcon() {
 // ═══════════════════════════════════════════════════════════════════
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDlijum_4JJ0V4eeE_AZS-T-ROGfby9o7Q",
-  authDomain: "konvo-endgame.firebaseapp.com",
-  projectId: "konvo-endgame",
-  storageBucket: "konvo-endgame.firebasestorage.app",
-  messagingSenderId: "297152484978",
-  appId: "1:297152484978:web:d6a2907445c6c431cb14eb"
+  apiKey: "AIzaSyDOiYfkCf3Y1Fq7625HimKsm3wYwjBWoxc",
+  authDomain: "konvo-d357d.firebaseapp.com",
+  projectId: "konvo-d357d",
+  storageBucket: "konvo-d357d.firebasestorage.app",
+  messagingSenderId: "924631278394",
+  appId: "1:924631278394:web:84b8642b5366d869926603"
 };
-
 const appStartTime = Date.now();
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3307,10 +3332,13 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
     bubble.dataset.timestamp = data.timestamp ? String(data.timestamp.toMillis()) : String(Date.now());
 
     if (!isMine) {
-      bubble.style.borderLeft = `3px solid ${userColor}`;
-      bubble.style.background = `linear-gradient(90deg, ${userColor}10, transparent)`;
-    }
-
+  bubble.style.borderLeft = `3px solid ${userColor}`;
+  bubble.style.background = `linear-gradient(90deg, ${userColor}10, transparent)`;
+} else {
+  // Sent messages - mirror the received bubble styling
+  bubble.style.borderRight = `3px solid ${userColor}`;
+  bubble.style.background = `linear-gradient(270deg, ${userColor}10, transparent)`;
+}
     if (state.isSelectionMode && state.selectedMessages.has(docInstance.id)) {
       bubble.classList.add("selected-message");
     }
@@ -3789,22 +3817,17 @@ function cancelReplyMode() {
 // EVENT LISTENERS
 // ═══════════════════════════════════════════════════════════════════
 
-// Prevent keyboard flickering on send - prevent buttons from stealing focus
-document.getElementById('chatButton')?.addEventListener('mousedown', (e) => {
-  e.preventDefault(); // Prevents focus from leaving the input
-}, { passive: false });
+// Prevent keyboard flickering - desktop only fix
+// Mobile will work naturally, and we refocus after send in postMessage()
+if (window.matchMedia('(hover: hover)').matches) {
+  document.getElementById('chatButton')?.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+  }, { passive: false });
 
-document.getElementById('chatButton')?.addEventListener('touchstart', (e) => {
-  e.preventDefault(); // Prevents focus from leaving the input on mobile
-}, { passive: false });
-
-document.getElementById('confessionButton')?.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-}, { passive: false });
-
-document.getElementById('confessionButton')?.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-}, { passive: false });
+  document.getElementById('confessionButton')?.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+}
 
 // Close reaction pickers and context menu when clicking outside
 document.addEventListener("click", (e) => {
