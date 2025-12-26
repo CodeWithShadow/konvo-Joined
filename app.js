@@ -791,14 +791,14 @@ function createKebabIcon() {
 // ═══════════════════════════════════════════════════════════════════
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDlijum_4JJ0V4eeE_AZS-T-ROGfby9o7Q",
-  authDomain: "konvo-endgame.firebaseapp.com",
-  projectId: "konvo-endgame",
-  storageBucket: "konvo-endgame.firebasestorage.app",
-  messagingSenderId: "297152484978",
-  appId: "1:297152484978:web:d6a2907445c6c431cb14eb"
-};
-
+    apiKey: "AIzaSyAQ2oBI80ESVFa-EQ9FhHYL4QQAUSiHado",
+    authDomain: "konvo-base-varient.firebaseapp.com",
+    projectId: "konvo-base-varient",
+    storageBucket: "konvo-base-varient.firebasestorage.app",
+    messagingSenderId: "655355743928",
+    appId: "1:655355743928:web:f8a9a7c7ba5d6e1503ee4d",
+    measurementId: "G-DTC5169FP8"
+  };
 const appStartTime = Date.now();
 
 // ═══════════════════════════════════════════════════════════════════
