@@ -133,13 +133,13 @@ const SPAM_CONFIG = Object.freeze({
 // ═══════════════════════════════════════════════════════════════════
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDOiYfkCf3Y1Fq7625HimKsm3wYwjBWoxc",
-  authDomain: "konvo-d357d.firebaseapp.com",
-  projectId: "konvo-d357d",
-  storageBucket: "konvo-d357d.firebasestorage.app",
-  messagingSenderId: "924631278394",
-  appId: "1:924631278394:web:84b8642b5366d869926603"
-};
+    apiKey: "AIzaSyA44_Aq1LBil6LFHcTltRI6vS5E0ilHfLQ",
+    authDomain: "konvo-f1.firebaseapp.com",
+    projectId: "konvo-f1",
+    storageBucket: "konvo-f1.firebasestorage.app",
+    messagingSenderId: "114064168714",
+    appId: "1:114064168714:web:7efb45d46b42cb93204cf3"
+  };
 
 const appStartTime = Date.now();
 
