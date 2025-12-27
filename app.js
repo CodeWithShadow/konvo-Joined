@@ -439,23 +439,39 @@ async function isMyDeviceBanned(db, userId, fingerprint) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// DEVICE REGISTRATION WITH RATE LIMITING
+// ═══════════════════════════════════════════════════════════════════
+
 async function registerDevice(db, userId, deviceInfo) {
   if (!db || !userId || !deviceInfo?.fingerprint) return;
 
   try {
     const deviceDocId = `${userId}_${deviceInfo.fingerprint}`;
     const deviceRef = doc(db, "user_devices", deviceDocId);
+    const userRef = doc(db, "users", userId);
+    
+    // Check if device already exists
     const deviceSnap = await getDoc(deviceRef);
 
     if (deviceSnap.exists()) {
+      // Device already registered - just update lastSeen (no rate limit needed)
       await updateDoc(deviceRef, {
         lastSeen: serverTimestamp(),
         ipAddress: deviceInfo.ipAddress || null,
         ipHash: deviceInfo.ipHash || null,
         userAgent: deviceInfo.userAgent || null,
       });
+      console.log('Device updated (existing device)');
     } else {
-      await setDoc(deviceRef, {
+      // NEW DEVICE - Use atomic batch to:
+      // 1. Create the device document
+      // 2. Update user's lastDeviceReg timestamp (for rate limiting)
+      
+      const batch = writeBatch(db);
+      
+      // Operation 1: Create the new device document
+      batch.set(deviceRef, {
         userId: userId,
         fingerprint: deviceInfo.fingerprint,
         ipAddress: deviceInfo.ipAddress || null,
@@ -468,11 +484,28 @@ async function registerDevice(db, userId, deviceInfo) {
         firstSeen: serverTimestamp(),
         lastSeen: serverTimestamp(),
       });
+      
+      // Operation 2: Update/Create user's lastDeviceReg timestamp
+      // Using merge:true so it doesn't overwrite existing user data
+      batch.set(userRef, {
+        lastDeviceReg: serverTimestamp()
+      }, { merge: true });
+      
+      // Commit both operations atomically
+      // If security rules reject (rate limit hit), both operations fail
+      await batch.commit();
+      
+      console.log('Device registered with rate limit timestamp');
     }
-
-    console.log('Device registered');
   } catch (error) {
-    console.error('Device registration error:', error);
+    // Handle rate limit rejection gracefully
+    if (error.code === 'permission-denied') {
+      console.warn('Device registration blocked');
+      // Don't show error to user - this is expected behavior for rate limiting
+      // The app will continue to work, just without registering a new device
+    } else {
+      console.error('Device registration error:', error);
+    }
   }
 }
 
