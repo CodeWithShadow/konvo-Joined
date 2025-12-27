@@ -81,7 +81,7 @@ import {
   orderBy,
   updateDoc,
   deleteDoc,
-  writeBatch,
+  writeBatch, // IMPORTED FOR ATOMIC WRITES
   arrayUnion,
   arrayRemove,
 } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore.js";
@@ -440,7 +440,7 @@ async function isMyDeviceBanned(db, userId, fingerprint) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// DEVICE REGISTRATION WITH RATE LIMITING
+// DEVICE REGISTRATION WITH RATE LIMITING (CRITICAL FIX)
 // ═══════════════════════════════════════════════════════════════════
 
 async function registerDevice(db, userId, deviceInfo) {
@@ -500,9 +500,8 @@ async function registerDevice(db, userId, deviceInfo) {
   } catch (error) {
     // Handle rate limit rejection gracefully
     if (error.code === 'permission-denied') {
-      console.warn('Device registration blocked');
+      console.warn('Device registration blocked (Rate Limited or Banned)');
       // Don't show error to user - this is expected behavior for rate limiting
-      // The app will continue to work, just without registering a new device
     } else {
       console.error('Device registration error:', error);
     }
@@ -986,10 +985,10 @@ const TYPING_TIMEOUT = 3000;
 const TYPING_STALE_THRESHOLD = 5000;
 
 const SPAM_CONFIG = Object.freeze({
-  MAX_MESSAGES: 10,           
-  TIME_WINDOW: 20000,         
-  WARNING_THRESHOLD: 7,       
-  CLEANUP_INTERVAL: 30000,    
+  MAX_MESSAGES: 10,            
+  TIME_WINDOW: 20000,          
+  WARNING_THRESHOLD: 7,        
+  CLEANUP_INTERVAL: 30000,     
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1492,7 +1491,7 @@ async function showNotification(title, body) {
         await reg.showNotification(safeTitle, { 
           body: safeBody, 
           icon: "icon.jpg", 
-          badge: "icon.jpg",
+          badge: "icon.jpg", 
           tag: 'konvo-message',
           renotify: true,
           requireInteraction: false
