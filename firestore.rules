@@ -5,7 +5,7 @@ service cloud.firestore {
 
     // ============================================================
     // KONVO - ANONYMOUS CHAT PLATFORM SECURITY RULES
-    // Version: 5.0 (With 2-Second Message Rate Limit)
+    // Version: 5.0 (With 1-Second Message Rate Limit)
     // ============================================================
 
     // ============================
@@ -40,7 +40,7 @@ service cloud.firestore {
       
       return !exists(userDocRef) || 
              !('lastDeviceReg' in get(userDocRef).data) ||
-             get(userDocRef).data.lastDeviceReg + duration.value(24, 'h') < request.time;
+             get(userDocRef).data.lastDeviceReg + duration.value(1, 'h') < request.time;
     }
 
     function isValidDeviceRegTimestampCreate() {

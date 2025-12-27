@@ -61,19 +61,25 @@ exports.detectSpamAndBan = onDocumentCreated(
         devices.forEach((doc) => {
           const data = doc.data();
           if (data.fingerprint) {
-            batch.set(db.collection("banned_devices").doc(data.fingerprint), {
-              userId,
-              reason: BAN_REASON,
-              timestamp: now
-            });
-          }
-          if (data.ipHash) {
-            batch.set(db.collection("banned_ips").doc(data.ipHash), {
-              userId,
-              reason: BAN_REASON,
-              timestamp: now
-            });
-          }
+  batch.set(db.collection("banned_devices").doc(data.fingerprint), {
+    fingerprint: data.fingerprint,  // ← Add this
+    userId,
+    username: msgData.username || "Unknown",  // ← Add this
+    bannedBy: "SYSTEM_CLOUD_FUNCTION",  // ← Add this
+    reason: BAN_REASON,
+    timestamp: now
+  });
+}
+if (data.ipHash) {
+  batch.set(db.collection("banned_ips").doc(data.ipHash), {
+    ipHash: data.ipHash,  // ← Add this
+    userId,
+    username: msgData.username || "Unknown",  // ← Add this
+    bannedBy: "SYSTEM_CLOUD_FUNCTION",  // ← Add this
+    reason: BAN_REASON,
+    timestamp: now
+  });
+}
         });
 
         recentMsgs.forEach((doc) => {
