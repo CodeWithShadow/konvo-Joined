@@ -164,16 +164,25 @@ function saveFingerprint(fingerprint) {
 
 async function getUserIPAddress() {
   const ipServices = [
-    'https://api.ipify.org?format=json',
-    'https://ipapi.co/json/'
+    { url: 'https://api.ipify.org?format=json', type: 'json', field: 'ip' },
+    { url: 'https://api64.ipify.org?format=json', type: 'json', field: 'ip' },
+    { url: 'https://api.ip.sb/ip', type: 'text', field: null }
   ];
   try {
     const fetchPromises = ipServices.map(async (service) => {
-      const response = await fetch(service, { mode: 'cors' });
+      const response = await fetch(service.url, { mode: 'cors' });
       if (!response.ok) throw new Error('Failed');
+      if (service.type === 'text') {
+        const ip = (await response.text()).trim();
+        if (ip && isValidIP(ip)) {
+          return ip;
+        }
+        throw new Error('Invalid IP');
+      }
       const data = await response.json();
-      if (data.ip && isValidIP(data.ip)) {
-        return data.ip;
+      const ip = data[service.field];
+      if (ip && isValidIP(ip)) {
+        return ip;
       }
       throw new Error('Invalid IP');
     });
