@@ -1,0 +1,92 @@
+Firebase Cloud Functions - Terminal Commands 📋
+
+🚀 Deployment Commands
+
+Command	Description
+firebase deploy	    Deploy everything (functions, rules, indexes)
+firebase deploy --only functions	Deploy only functions
+firebase deploy --only functions:detectSpamAndBan	Deploy specific function
+firebase deploy --only firestore:rules	Deploy only Firestore rules
+firebase deploy --only firestore:indexes	Deploy only indexes
+
+🗑️ Delete Commands
+
+Command	Description
+firebase functions:delete detectSpamAndBan	    Delete specific function
+firebase functions:delete detectSpamAndBan --region asia-south1	    Delete with region specified
+firebase functions:delete detectSpamAndBan --force	    Delete without confirmation
+firebase functions:delete func1 func2 func3	    Delete multiple functions
+
+📊 View & Monitor Commands
+
+Command	Description
+
+firebase functions:list	    List all deployed functions
+firebase functions:log	    View function logs
+firebase functions:log --only detectSpamAndBan	    View specific function logs
+firebase functions:log --limit 50	    View last 50 log entries
+
+🧪 Testing Commands
+
+Command	Description
+firebase emulators:start	    Start all emulators
+firebase emulators:start --only functions	    Start only functions emulator
+firebase functions:shell	    Interactive testing shell
+
+📦 Setup Commands
+
+Command	Description
+
+firebase init functions	    Initialize functions in project
+firebase login	    Login to Firebase
+firebase logout	    Logout from Firebase
+firebase projects:list	    List all your projects
+firebase use projectName	    Switch to different project
+
+🔧 NPM Commands (Run inside /functions folder)
+
+Bash
+
+cd functions
+
+Command	Description
+
+npm install	    Install dependencies
+npm install package-name	    Add new package
+npm uninstall package-name	    Remove package
+npm update	        Update all packages
+
+📝 Quick Reference Card
+
+Bash
+
+# === FULL DEPLOYMENT ===
+cd functions && npm install && cd .. && firebase deploy
+
+# === DEPLOY ONLY FUNCTIONS ===
+firebase deploy --only functions
+
+# === DELETE FUNCTION ===
+firebase functions:delete detectSpamAndBan --region asia-south1
+
+# === VIEW LOGS ===
+firebase functions:log
+
+# === LIST FUNCTIONS ===
+firebase functions:list
+
+# === TEST LOCALLY ===
+firebase emulators:start --only functions
+
+🎯 Your Most Used Commands
+
+Bash
+
+# Deploy spam detector
+firebase deploy --only functions
+
+# Check logs
+firebase functions:log
+
+# Delete if needed
+firebase functions:delete detectSpamAndBan --region asia-south1
