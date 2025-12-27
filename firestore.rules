@@ -5,7 +5,7 @@ service cloud.firestore {
 
     // ============================================================
     // KONVO - ANONYMOUS CHAT PLATFORM SECURITY RULES
-    // Version: 4.5 (Device Registration Rate Limit)
+    // Version: 5.0 (With 2-Second Message Rate Limit)
     // ============================================================
 
     // ============================
@@ -35,27 +35,20 @@ service cloud.firestore {
     // 1.5 DEVICE REGISTRATION RATE LIMIT
     // ============================
 
-    // Check if user can register a new device (24-hour cooldown)
     function canRegisterDevice() {
       let userDocRef = /databases/$(database)/documents/users/$(request.auth.uid);
       
-      // Allow if:
-      // 1. User document doesn't exist (first time user), OR
-      // 2. lastDeviceReg field doesn't exist (never registered a device), OR
-      // 3. More than 24 hours have passed since last device registration
       return !exists(userDocRef) || 
              !('lastDeviceReg' in get(userDocRef).data) ||
              get(userDocRef).data.lastDeviceReg + duration.value(24, 'h') < request.time;
     }
 
-    // Validate device registration timestamp-only document creation
     function isValidDeviceRegTimestampCreate() {
       let data = request.resource.data;
       return data.keys().hasOnly(['lastDeviceReg'])
              && data.lastDeviceReg == request.time;
     }
 
-    // Validate device registration timestamp-only document update
     function isValidDeviceRegTimestampUpdate() {
       let data = request.resource.data;
       let changedFields = data.diff(resource.data).affectedKeys();
@@ -63,46 +56,42 @@ service cloud.firestore {
              && data.lastDeviceReg == request.time;
     }
 
-// ============================
-// 2. VALIDATION FUNCTIONS
-// ============================
+    // ============================
+    // 2. VALIDATION FUNCTIONS
+    // ============================
 
-function isValidText() {
-  let text = request.resource.data.text;
-  return text is string
-         && text.size() > 0
-         && text.size() <= 500
-         && !text.matches('.*[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F].*');
-}
+    function isValidText() {
+      let text = request.resource.data.text;
+      return text is string
+             && text.size() > 0
+             && text.size() <= 500
+             && !text.matches('.*[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F].*');
+    }
 
-function isServerTimestamp() {
-  return request.resource.data.timestamp == request.time;
-}
+    function isServerTimestamp() {
+      return request.resource.data.timestamp == request.time;
+    }
 
-function isValidCollection(col) {
-  return col in ['chat', 'confessions'];
-}
+    function isValidCollection(col) {
+      return col in ['chat', 'confessions'];
+    }
 
-// ═══════════════════════════════════════════════════════════════════
-// UPDATED: canSendMessage() with 2-second rate limit
-// ═══════════════════════════════════════════════════════════════════
-function canSendMessage() {
-  let userDocRef = /databases/$(database)/documents/users/$(request.auth.uid);
-  
-  // Base checks: user is active and has a profile with valid username
-  return isActiveUser()
-         && exists(userDocRef)
-         && get(userDocRef).data.username is string
-         && get(userDocRef).data.username.size() >= 1
-         // Rate limit: 2-second cooldown between messages
-         && (
-           // Allow if lastMessageAt doesn't exist (first message ever)
-           !('lastMessageAt' in get(userDocRef).data)
-           ||
-           // Allow if more than 2 seconds have passed since last message
-           request.time > get(userDocRef).data.lastMessageAt + duration.value(2, 's')
-         );
-}
+    // ═══════════════════════════════════════════════════════════════════
+    // UPDATED: canSendMessage() with 2-second rate limit
+    // ═══════════════════════════════════════════════════════════════════
+    function canSendMessage() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      
+      return isActiveUser()
+             && userDoc != null
+             // CORRECTED: 1.0 second cooldown.
+             // This allows enough speed (up to ~10 msgs/10s) for the 
+             // Cloud Function (set to 7 msgs/10s) to actually catch and ban them.
+             && (
+               !('lastMessageAt' in userDoc.data) ||
+               request.time > userDoc.data.lastMessageAt + duration.value(1000, 'ms')
+             );
+    }
 
     function isValidUsername(username) {
       return username is string
@@ -414,10 +403,6 @@ function canSendMessage() {
              && get(/databases/$(database)/documents/user_devices/$(deviceDocId)).data.userId == request.auth.uid;
     }
 
-    // ============================
-    // SECURE SELF IP BAN - VERIFIED AGAINST DEVICE RECORD
-    // ============================
-    
     function isValidSelfIPBanRecord(ipHashDocId) {
       let data = request.resource.data;
       let fingerprint = data.get('fingerprint', '');
@@ -492,16 +477,13 @@ function canSendMessage() {
       allow read: if isSignedIn();
 
       allow create: if (
-                      // Normal profile creation with username
                       isActiveUser()
                       && request.auth.uid == userId
                       && isValidUserProfileCreate()
                     ) || (
-                      // Admin creating user doc
                       isAdmin()
                       && isValidAdminUserCreate()
                     ) || (
-                      // Device registration timestamp only (no username yet)
                       isSignedIn()
                       && !isBanned()
                       && request.auth.uid == userId
@@ -509,22 +491,18 @@ function canSendMessage() {
                     );
 
       allow update: if (
-                      // Normal profile update
                       isActiveUser()
                       && request.auth.uid == userId
                       && isValidUserProfileUpdate()
                     ) || (
-                      // Admin update
                       isAdmin()
                       && isValidAdminUserUpdate()
                     ) || (
-                      // Self-ban for spam
                       isSignedIn()
                       && request.auth.uid == userId
                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['banned'])
                       && request.resource.data.banned == true
                     ) || (
-                      // Device registration timestamp update only
                       isSignedIn()
                       && !isBanned()
                       && request.auth.uid == userId
@@ -605,7 +583,6 @@ function canSendMessage() {
       allow read: if isAdmin() ||
                   (isSignedIn() && deviceDocId.matches('^' + request.auth.uid + '_.*'));
 
-      // CREATE: Now requires canRegisterDevice() check (24-hour cooldown)
       allow create: if isSignedIn() 
                     && !isBanned()
                     && isValidDeviceRegistration()

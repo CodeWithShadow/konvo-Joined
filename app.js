@@ -3625,7 +3625,7 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// MESSAGE POSTING
+// MESSAGE POSTING (WITH SERVER-SIDE RATE LIMIT)
 // ═══════════════════════════════════════════════════════════════════
 
 async function postMessage(collectionRef, input) {
@@ -3650,6 +3650,7 @@ async function postMessage(collectionRef, input) {
     return;
   }
 
+  // Client-side spam check (for warning/auto-ban)
   const spamCheck = checkSpamStatus();
 
   if (!spamCheck.allowed) {
@@ -3667,7 +3668,6 @@ async function postMessage(collectionRef, input) {
 
   if (!validation.valid) {
     showToast(validation.error, "error");
-    // Keep focus on input even on validation error
     input.focus({ preventScroll: true });
     return;
   }
@@ -3694,8 +3694,6 @@ async function postMessage(collectionRef, input) {
     }
   };
 
-  // Don't disable input - just disable the button to prevent double-submit
-  // This helps keep the keyboard open
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.classList.add('loading');
@@ -3703,8 +3701,9 @@ async function postMessage(collectionRef, input) {
   }
 
   try {
-    console.log('Posting message...');
+    console.log('Posting message with rate limit...');
 
+    // Build the message data
     const messageData = {
       text: text,
       timestamp: serverTimestamp(),
@@ -3719,21 +3718,40 @@ async function postMessage(collectionRef, input) {
       };
     }
 
-    const addResult = await withTimeout(
-      addDoc(collectionRef, messageData),
-      15000,
-      null
-    );
+    // ═══════════════════════════════════════════════════════════════
+    // ATOMIC BATCH WRITE: Message + Rate Limit Timestamp
+    // Both operations succeed or fail together
+    // ═══════════════════════════════════════════════════════════════
+    
+    const batch = writeBatch(state.db);
+    
+    // Operation 1: Create the new message document
+    const messageRef = doc(collectionRef);
+    batch.set(messageRef, messageData);
+    
+    // Operation 2: Update user's lastMessageAt for server-side rate limiting
+    // This timestamp is checked by canSendMessage() in security rules
+    const userRef = doc(state.db, "users", state.currentUserId);
+    batch.update(userRef, {
+      lastMessageAt: serverTimestamp()
+    });
+    
+    // Commit the batch atomically with timeout protection
+    await Promise.race([
+      batch.commit(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Message send timed out')), 15000)
+      )
+    ]);
+    
+    // ═══════════════════════════════════════════════════════════════
 
-    if (addResult === null) {
-      throw new Error('Message send timed out');
-    }
+    console.log('Message posted successfully');
 
-    console.log('Message posted successfully:', addResult.id);
-
+    // Record for client-side spam tracking (backup protection)
     recordMessage();
 
-    // Clear input value
+    // Clear input
     if (input) {
       input.value = "";
     }
@@ -3751,11 +3769,9 @@ async function postMessage(collectionRef, input) {
 
     resetUI();
     
-    // CRITICAL: Refocus input to prevent keyboard from closing on mobile
-    // Using requestAnimationFrame ensures this happens after all DOM updates
+    // Refocus input to keep keyboard open on mobile
     requestAnimationFrame(() => {
       if (inputToRefocus) {
-        // preventScroll: true prevents the page from jumping
         inputToRefocus.focus({ preventScroll: true });
       }
     });
@@ -3763,8 +3779,18 @@ async function postMessage(collectionRef, input) {
   } catch (error) {
     console.error('Post error:', error);
 
+    // ═══════════════════════════════════════════════════════════════
+    // ENHANCED ERROR HANDLING FOR RATE LIMIT
+    // ═══════════════════════════════════════════════════════════════
+    
     if (error.code === 'permission-denied') {
-      showToast("Permission denied. Please wait a moment and try again.", "error");
+      // Distinguish between rate limit and ban
+      if (state.isBanned || state.isDeviceBanned) {
+        showToast("You have been banned from sending messages.", "error");
+      } else {
+        // Most likely the 2-second rate limit was hit
+        showToast("You are messaging too fast! Wait 2 seconds.", "error");
+      }
     } else if (error.message === 'Message send timed out') {
       showToast("Message timed out. Please check your connection.", "error");
     } else if (error.code === 'unavailable') {
