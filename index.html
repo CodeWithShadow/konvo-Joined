@@ -8,21 +8,26 @@
     <!-- Security Meta Tags -->
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta http-equiv="X-Frame-Options" content="SAMEORIGIN" />
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block" />
     
     <!-- SEO & PWA Meta Tags -->
     <meta name="description" content="Konvo - Anonymous chat platform for open conversations. Share confessions and chat anonymously." />
-    <meta name="theme-color" content="#1e293b" />
+    <meta name="theme-color" content="#0a0a0a" />
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Konvo" />
     
+    <!-- Prevent phone number detection -->
+    <meta name="format-detection" content="telephone=no" />
+    
     <title>Konvo // Anonymous Chat</title>
     
     <!-- Favicon & Icons -->
-    <link rel="icon" type="image/png" href="/favicon.png?v=8" />
-    <link rel="shortcut icon" type="image/png" href="/favicon.png?v=8" />
-    <link rel="icon" type="image/jpeg" href="/icon.jpg?v=8" />
+    <link rel="icon" type="image/png" href="/favicon.png?v=9" />
+    <link rel="shortcut icon" type="image/png" href="/favicon.png?v=9" />
+    <link rel="icon" type="image/jpeg" href="/icon.jpg?v=9" />
     <link rel="apple-touch-icon" href="/icon.jpg" />
     
     <!-- PWA Manifest -->
@@ -33,6 +38,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://www.google.com" crossorigin />
+    
+    <!-- DNS Prefetch for reCAPTCHA -->
+    <link rel="dns-prefetch" href="https://www.google.com" />
+    <link rel="dns-prefetch" href="https://www.gstatic.com" />
     
     <!-- Google Fonts -->
     <link
@@ -42,291 +52,344 @@
     
     <!-- Compiled Stylesheet (includes Tailwind) -->
     <link rel="stylesheet" href="dist/style.css" />
+    
+    <!-- Inline critical styles for ban overlay -->
+    <style>
+      .ban-check-overlay {
+        position: fixed;
+        inset: 0;
+        background-color: #0a0a0a;
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .ban-check-overlay.hidden {
+        display: none;
+        opacity: 0;
+      }
+      .ban-check-text {
+        color: #888;
+        font-size: 0.875rem;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        animation: pulse 2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.3; }
+        50% { opacity: 1; }
+      }
+      /* Hide reCAPTCHA badge - we have our own privacy notice */
+      .grecaptcha-badge {
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+    </style>
   </head>
   
   <body class="flex flex-col bg-konvo-bg h-dvh min-h-dvh max-h-dvh overflow-hidden">
     <!-- Ban Check Overlay (shows while checking device status) -->
-    <div id="banCheckOverlay" class="ban-check-overlay">
+    <div id="banCheckOverlay" class="ban-check-overlay" role="alert" aria-live="assertive">
       <div class="text-center">
         <div class="ban-check-text">VERIFYING ACCESS...</div>
       </div>
     </div>
 
-    <!-- Header -->
-    <header
-      class="flex justify-between items-center px-1.5 py-1.5 sm:px-3 sm:py-3 border-b border-konvo-border bg-konvo-bg gap-1 sm:gap-2 z-10 h-10 sm:h-14"
-    >
-      <h1 class="text-base sm:text-2xl font-bold text-konvo-text tracking-tight shrink-0">
-        <img src="konvo.png" alt="Konvo" class="h-5 sm:h-8" />
-      </h1>
-      
-      <div class="flex items-center gap-1.5 overflow-visible flex-1 justify-end">
-        <nav class="flex text-[9px] sm:text-base font-medium gap-0.5 sm:gap-4 shrink">
-          <div 
-            id="navConfessions" 
-            class="nav-item px-1.5 py-0.5 sm:px-2 sm:py-1"
-            role="button"
-            tabindex="0"
-            aria-label="View Confessions"
-          >
-            <span class="block truncate">🤫 CONFESSIONS</span>
-          </div>
-          <div 
-            id="navChat" 
-            class="nav-item active px-1.5 py-0.5 sm:px-2 sm:py-1"
-            role="button"
-            tabindex="0"
-            aria-label="View Chat"
-          >
-            <span class="block truncate">💬 CHAT</span>
-          </div>
-        </nav>
-
-        <div class="flex items-center gap-0.5 sm:gap-2 shrink-0">
-          <!-- Notification Button -->
-          <button
-            id="notificationButton"
-            type="button"
-            class="p-0.5 sm:p-2 rounded-full hover:bg-konvo-surface transition text-konvo-text flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            title="Toggle Notifications"
-            aria-label="Toggle Notifications"
-          >
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              width="16" 
-              height="16" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              stroke-width="2" 
-              stroke-linecap="round" 
-              stroke-linejoin="round"
-              aria-hidden="true"
+    <!-- Main App Container -->
+    <div id="app" class="flex flex-col h-full">
+      <!-- Header -->
+      <header
+        class="flex justify-between items-center px-1.5 py-1.5 sm:px-3 sm:py-3 border-b border-konvo-border bg-konvo-bg gap-1 sm:gap-2 z-10 h-10 sm:h-14 shrink-0"
+        role="banner"
+      >
+        <h1 class="text-base sm:text-2xl font-bold text-konvo-text tracking-tight shrink-0">
+          <img src="konvo.png" alt="Konvo" class="h-5 sm:h-8" draggable="false" />
+        </h1>
+        
+        <div class="flex items-center gap-1.5 overflow-visible flex-1 justify-end">
+          <nav class="flex text-[9px] sm:text-base font-medium gap-0.5 sm:gap-4 shrink" role="tablist" aria-label="Main navigation">
+            <div 
+              id="navConfessions" 
+              class="nav-item px-1.5 py-0.5 sm:px-2 sm:py-1"
+              role="tab"
+              tabindex="0"
+              aria-label="View Confessions"
+              aria-selected="false"
+              aria-controls="feedContainer"
             >
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              <path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path>
-              <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path>
-              <path d="M18 8a6 6 0 0 0-9.33-5"></path>
-              <line x1="1" y1="1" x2="23" y2="23"></line>
-            </svg>
-          </button>
-
-          <!-- Profile Button -->
-          <button
-            id="profileButton"
-            type="button"
-            class="p-0.5 sm:p-2 rounded-full hover:bg-konvo-surface transition text-konvo-text flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            title="Edit Profile"
-            aria-label="Edit Profile"
-          >
-            <svg
-              width="16"
-              height="16"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
+              <span class="block truncate">🤫 CONFESSIONS</span>
+            </div>
+            <div 
+              id="navChat" 
+              class="nav-item active px-1.5 py-0.5 sm:px-2 sm:py-1"
+              role="tab"
+              tabindex="0"
+              aria-label="View Chat"
+              aria-selected="true"
+              aria-controls="feedContainer"
             >
-              <path
-                stroke-linecap="round"
+              <span class="block truncate">💬 CHAT</span>
+            </div>
+          </nav>
+
+          <div class="flex items-center gap-0.5 sm:gap-2 shrink-0">
+            <!-- Notification Button -->
+            <button
+              id="notificationButton"
+              type="button"
+              class="p-0.5 sm:p-2 rounded-full hover:bg-konvo-surface transition text-konvo-text flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              title="Toggle Notifications"
+              aria-label="Toggle Notifications"
+              aria-pressed="false"
+            >
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="16" 
+                height="16" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                stroke-width="2" 
+                stroke-linecap="round" 
                 stroke-linejoin="round"
-                stroke-width="2"
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-              ></path>
-            </svg>
-          </button>
-        </div>
-      </div>
-    </header>
+                aria-hidden="true"
+              >
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                <path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path>
+                <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path>
+                <path d="M18 8a6 6 0 0 0-9.33-5"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
 
-    <!-- Main Content -->
-    <main class="flex-1 flex flex-col overflow-x-hidden relative pb-12 sm:pb-16">
-      <!-- Pinned Message Bar -->
-      <div 
-        id="pinnedMessageBar" 
-        class="hidden flex items-center gap-2 px-2 py-1.5 sm:gap-3 sm:px-4 sm:py-2 bg-konvo-surface border-b border-konvo-border z-20 shadow-lg cursor-pointer hover:bg-konvo-surface/90 transition-colors shrink-0"
-        role="button"
-        tabindex="0"
-        aria-label="View pinned message"
-      >
-        <span class="text-base sm:text-lg shrink-0" aria-hidden="true">📌</span>
-        <div class="flex flex-col overflow-hidden">
-          <span class="text-[9px] sm:text-[10px] text-yellow-400 font-bold uppercase tracking-wider">Pinned Message</span>
-          <p id="pinnedMessageText" class="text-xs sm:text-sm text-konvo-text truncate"></p>
+            <!-- Profile Button -->
+            <button
+              id="profileButton"
+              type="button"
+              class="p-0.5 sm:p-2 rounded-full hover:bg-konvo-surface transition text-konvo-text flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              title="Edit Profile"
+              aria-label="Edit Profile"
+              aria-haspopup="dialog"
+            >
+              <svg
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                ></path>
+              </svg>
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <!-- Feed Container -->
-      <div
-        id="feedContainer"
-        class="flex-1 flex flex-col p-1.5 gap-1.5 sm:p-4 sm:gap-2 overflow-y-auto"
-        role="log"
-        aria-live="polite"
-        aria-label="Messages"
-      >
-        <div id="loading" class="text-center p-4 text-konvo-muted text-sm">
-          CONNECTING...
-        </div>
-      </div>
-
-      <!-- Scroll to Bottom Button -->
-      <button 
-        id="scrollToBottomBtn" 
-        class="hidden"
-        type="button"
-        aria-label="Scroll to bottom"
-        title="Scroll to latest messages"
-      >
-        <span id="newMsgCount" class="hidden" aria-live="polite">0</span>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+      <!-- Main Content -->
+      <main class="flex-1 flex flex-col overflow-x-hidden relative pb-12 sm:pb-16" role="main">
+        <!-- Pinned Message Bar -->
+        <div 
+          id="pinnedMessageBar" 
+          class="hidden flex items-center gap-2 px-2 py-1.5 sm:gap-3 sm:px-4 sm:py-2 bg-konvo-surface border-b border-konvo-border z-20 shadow-lg cursor-pointer hover:bg-konvo-surface/90 transition-colors shrink-0"
+          role="button"
+          tabindex="0"
+          aria-label="View pinned message"
         >
-          <path d="M7 13l5 5 5-5M7 6l5 5 5-5" />
-        </svg>
-      </button>
-
-      <!-- Selection Bar -->
-      <div
-        id="selectionBar"
-        class="hidden flex justify-between items-center bg-konvo-surface border-t border-konvo-border p-2 sm:p-3"
-        role="toolbar"
-        aria-label="Message selection actions"
-      >
-        <span id="selectionCount" class="text-sm sm:text-base text-konvo-text font-medium" aria-live="polite">
-          0 selected
-        </span>
-        <div class="flex gap-4">
-          <button
-            id="selectionCancel"
-            type="button"
-            class="text-xs sm:text-sm font-medium text-konvo-muted hover:text-konvo-text transition"
-            aria-label="Cancel selection"
-          >
-            CANCEL
-          </button>
-          <button
-            id="selectionDelete"
-            type="button"
-            class="text-xs sm:text-sm font-bold text-red-500 hover:text-red-400 transition"
-            aria-label="Delete selected messages"
-          >
-            DELETE
-          </button>
+          <span class="text-base sm:text-lg shrink-0" aria-hidden="true">📌</span>
+          <div class="flex flex-col overflow-hidden">
+            <span class="text-[9px] sm:text-[10px] text-yellow-400 font-bold uppercase tracking-wider">Pinned Message</span>
+            <p id="pinnedMessageText" class="text-xs sm:text-sm text-konvo-text truncate"></p>
+          </div>
         </div>
-      </div>
 
-      <!-- Reply Bar -->
-      <div id="replyBar" role="status" aria-label="Replying to message">
-        <div class="reply-info">
-          <div class="reply-author" id="replyAuthor"></div>
-          <div class="reply-text" id="replyText"></div>
+        <!-- Feed Container -->
+        <div
+          id="feedContainer"
+          class="flex-1 flex flex-col p-1.5 gap-1.5 sm:p-4 sm:gap-2 overflow-y-auto"
+          role="log"
+          aria-live="polite"
+          aria-label="Messages"
+          aria-relevant="additions"
+        >
+          <div id="loading" class="text-center p-4 text-konvo-muted text-sm" role="status" aria-live="polite">
+            CONNECTING...
+          </div>
         </div>
+
+        <!-- Scroll to Bottom Button -->
         <button 
-          id="cancelReply" 
+          id="scrollToBottomBtn" 
+          class="hidden"
           type="button"
-          title="Cancel reply"
-          aria-label="Cancel reply"
+          aria-label="Scroll to bottom"
+          title="Scroll to latest messages"
         >
-          ✕
+          <span id="newMsgCount" class="hidden" aria-live="polite" aria-atomic="true">0</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M7 13l5 5 5-5M7 6l5 5 5-5" />
+          </svg>
         </button>
-      </div>
 
-      <!-- Typing Indicator -->
-      <div 
-        id="typingIndicator" 
-        class="px-4 h-6 text-xs text-konvo-muted"
-        aria-live="polite"
-        aria-atomic="true"
+        <!-- Selection Bar -->
+        <div
+          id="selectionBar"
+          class="hidden flex justify-between items-center bg-konvo-surface border-t border-konvo-border p-2 sm:p-3"
+          role="toolbar"
+          aria-label="Message selection actions"
+        >
+          <span id="selectionCount" class="text-sm sm:text-base text-konvo-text font-medium" aria-live="polite" aria-atomic="true">
+            0 selected
+          </span>
+          <div class="flex gap-4">
+            <button
+              id="selectionCancel"
+              type="button"
+              class="text-xs sm:text-sm font-medium text-konvo-muted hover:text-konvo-text transition"
+              aria-label="Cancel selection"
+            >
+              CANCEL
+            </button>
+            <button
+              id="selectionDelete"
+              type="button"
+              class="text-xs sm:text-sm font-bold text-red-500 hover:text-red-400 transition"
+              aria-label="Delete selected messages"
+            >
+              DELETE
+            </button>
+          </div>
+        </div>
+
+        <!-- Reply Bar -->
+        <div id="replyBar" role="status" aria-label="Replying to message" aria-live="polite">
+          <div class="reply-info">
+            <div class="reply-author" id="replyAuthor"></div>
+            <div class="reply-text" id="replyText"></div>
+          </div>
+          <button 
+            id="cancelReply" 
+            type="button"
+            title="Cancel reply"
+            aria-label="Cancel reply"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Typing Indicator -->
+        <div 
+          id="typingIndicator" 
+          class="px-4 h-6 text-xs text-konvo-muted shrink-0"
+          aria-live="polite"
+          aria-atomic="true"
+          role="status"
+        >
+          &nbsp;
+        </div>
+      </main>
+
+      <!-- Confession Form -->
+      <form 
+        id="confessionForm" 
+        class="hidden items-center gap-1.5 sm:gap-3 border-t border-konvo-border p-1.5 sm:p-3 fixed bottom-0 left-0 right-0 z-10 bg-konvo-bg"
+        aria-label="Post a confession"
+        autocomplete="off"
       >
-        &nbsp;
-      </div>
-    </main>
+        <label for="confessionInput" class="sr-only">Type your confession</label>
 
-    <!-- Confession Form -->
-<form 
-  id="confessionForm" 
-  class="hidden items-center gap-1.5 sm:gap-3 border-t border-konvo-border p-1.5 sm:p-3 fixed bottom-0 left-0 right-0 z-10 bg-konvo-bg"
-  aria-label="Post a confession"
->
-  <label for="confessionInput" class="sr-only">Type your confession</label>
+        <div class="relative flex-1">
+          <textarea
+            id="confessionInput"
+            rows="1"
+            class="w-full resize-none focus:outline-none text-xs sm:text-sm py-1.5 sm:py-2.5 px-2.5 sm:px-3 pr-14 sm:pr-16 bg-konvo-bg border border-konvo-border rounded-lg leading-normal"
+            placeholder="Type your confession... 🤫"
+            required
+            maxlength="500"
+            autocomplete="off"
+            autocorrect="on"
+            autocapitalize="sentences"
+            spellcheck="true"
+            enterkeyhint="send"
+          ></textarea>
 
-  <div class="relative flex-1">
-    <textarea
-      id="confessionInput"
-      rows="1"
-      class="w-full resize-none focus:outline-none text-xs sm:text-sm py-1.5 sm:py-2.5 px-2.5 sm:px-3 pr-14 sm:pr-16 bg-konvo-bg border border-konvo-border rounded-lg leading-normal"
-      placeholder="Type your confession... 🤫"
-      required
-      maxlength="500"
-      autocomplete="off"
-      spellcheck="true"
-    ></textarea>
+          <!-- Character Counter -->
+          <span 
+            id="confessionCharCount" 
+            class="char-counter"
+            aria-live="off"
+            aria-label="Character count"
+          >0/500</span>
+        </div>
+        
+        <button
+          id="confessionButton"
+          type="submit"
+          class="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent-vibrant text-black hover:bg-konvo-accent-vibrant/90 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          POST ✍️
+        </button>
+      </form>
 
-    <!-- Character Counter -->
-    <span 
-      id="confessionCharCount" 
-      class="char-counter"
-      aria-live="polite"
-      aria-label="Character count"
-    >0/500</span>
-  </div>
-  
-  <button
-    id="confessionButton"
-    type="submit"
-    class="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent-vibrant text-black hover:bg-konvo-accent-vibrant/90 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white whitespace-nowrap"
-  >
-    POST ✍️
-  </button>
-</form>
+      <!-- Chat Form -->
+      <form 
+        id="chatForm" 
+        class="flex items-center gap-1.5 sm:gap-3 border-t border-konvo-border p-1.5 sm:p-3 fixed bottom-0 left-0 right-0 z-10 bg-konvo-bg"
+        aria-label="Send a message"
+        autocomplete="off"
+      >
+        <label for="chatInput" class="sr-only">Type a message</label>
 
-    <!-- Chat Form -->
-<form 
-  id="chatForm" 
-  class="flex items-center gap-1.5 sm:gap-3 border-t border-konvo-border p-1.5 sm:p-3 fixed bottom-0 left-0 right-0 z-10 bg-konvo-bg"
-  aria-label="Send a message"
->
-  <label for="chatInput" class="sr-only">Type a message</label>
+        <div class="relative flex-1">
+          <textarea
+            id="chatInput"
+            rows="1"
+            class="w-full resize-none focus:outline-none text-xs sm:text-sm py-1.5 sm:py-2.5 px-2.5 sm:px-3 pr-14 sm:pr-16 bg-konvo-bg border border-konvo-border rounded-lg leading-normal"
+            placeholder="Type a message... 💬"
+            required
+            maxlength="500"
+            autocomplete="off"
+            autocorrect="on"
+            autocapitalize="sentences"
+            spellcheck="true"
+            enterkeyhint="send"
+          ></textarea>
 
-  <div class="relative flex-1">
-    <textarea
-      id="chatInput"
-      rows="1"
-      class="w-full resize-none focus:outline-none text-xs sm:text-sm py-1.5 sm:py-2.5 px-2.5 sm:px-3 pr-14 sm:pr-16 bg-konvo-bg border border-konvo-border rounded-lg leading-normal"
-      placeholder="Type a message... 💬"
-      required
-      maxlength="500"
-      autocomplete="off"
-      spellcheck="true"
-    ></textarea>
-
-    <!-- Character Counter -->
-    <span 
-      id="chatCharCount" 
-      class="char-counter"
-      aria-live="polite"
-      aria-label="Character count"
-    >0/500</span>
-  </div>
-  
-  <button
-    id="chatButton"
-    type="submit"
-    class="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent-vibrant text-black hover:bg-konvo-accent-vibrant/90 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white whitespace-nowrap"
-  >
-    SEND ✈️
-  </button>
-</form>
+          <!-- Character Counter -->
+          <span 
+            id="chatCharCount" 
+            class="char-counter"
+            aria-live="off"
+            aria-label="Character count"
+          >0/500</span>
+        </div>
+        
+        <button
+          id="chatButton"
+          type="submit"
+          class="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent-vibrant text-black hover:bg-konvo-accent-vibrant/90 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          SEND ✈️
+        </button>
+      </form>
+    </div>
 
     <!-- Profile Modal -->
     <div 
@@ -339,6 +402,7 @@
     >
       <div
         class="modal-content bg-konvo-surface p-4 sm:p-6 rounded-xl border border-konvo-border w-full max-w-xs sm:max-w-sm flex flex-col gap-4 shadow-2xl"
+        role="document"
       >
         <h2 id="profileModalTitle" class="text-lg sm:text-xl font-bold text-konvo-text">👤 Edit Profile</h2>
         <div class="flex flex-col gap-2">
@@ -354,25 +418,30 @@
             placeholder="Enter a cool username"
             class="w-full p-2 sm:p-3 rounded-lg focus:outline-none bg-konvo-bg text-konvo-text border border-konvo-border text-sm focus-visible:ring-2 focus-visible:ring-white"
             maxlength="30"
-            autocomplete="off"
+            autocomplete="username"
             autocapitalize="off"
+            autocorrect="off"
             spellcheck="false"
             pattern="^[a-zA-Z0-9_\- ]+$"
             title="Only letters, numbers, spaces, underscores, and hyphens allowed"
+            aria-describedby="usernameHelp"
           />
+          <p id="usernameHelp" class="text-[10px] text-konvo-muted">
+            1-30 characters. Letters, numbers, spaces, underscores, and hyphens only.
+          </p>
         </div>
         <div class="flex gap-3 mt-4">
           <button
             id="modalCloseButton"
             type="button"
-            class="flex-1 px-3 py-2 rounded-lg font-medium text-xs sm:text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition"
+            class="flex-1 px-3 py-2 rounded-lg font-medium text-xs sm:text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             id="modalSaveButton"
             type="button"
-            class="flex-1 px-3 py-2 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent text-black hover:bg-konvo-accent/90 transition"
+            class="flex-1 px-3 py-2 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent text-black hover:bg-konvo-accent/90 transition disabled:opacity-50"
           >
             Save
           </button>
@@ -391,6 +460,7 @@
     >
       <div
         class="modal-content bg-konvo-surface p-4 sm:p-6 rounded-xl border border-konvo-border w-full max-w-xs sm:max-w-sm flex flex-col gap-4 shadow-2xl"
+        role="document"
       >
         <h2 id="editModalTitle" class="text-lg sm:text-xl font-bold text-konvo-text">✏️ Edit Message</h2>
         <label for="modalEditTextArea" class="sr-only">Edit your message</label>
@@ -400,19 +470,25 @@
           class="w-full p-2 sm:p-3 rounded-lg resize-none focus:outline-none bg-konvo-bg text-konvo-text border border-konvo-border text-sm focus-visible:ring-2 focus-visible:ring-white"
           maxlength="500"
           spellcheck="true"
+          autocorrect="on"
+          autocapitalize="sentences"
+          aria-describedby="editHelp"
         ></textarea>
+        <p id="editHelp" class="text-[10px] text-konvo-muted">
+          You can edit messages within 15 minutes of sending.
+        </p>
         <div class="flex gap-3 mt-4">
           <button
             id="editModalCancelButton"
             type="button"
-            class="flex-1 px-3 py-2 rounded-lg font-medium text-xs sm:text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition"
+            class="flex-1 px-3 py-2 rounded-lg font-medium text-xs sm:text-sm bg-transparent border border-konvo-border text-konvo-muted hover:text-konvo-text hover:border-konvo-text transition disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             id="editModalSaveButton"
             type="button"
-            class="flex-1 px-3 py-2 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent text-black hover:bg-konvo-accent/90 transition"
+            class="flex-1 px-3 py-2 rounded-lg font-bold text-xs sm:text-sm bg-konvo-accent text-black hover:bg-konvo-accent/90 transition disabled:opacity-50"
           >
             Save
           </button>
@@ -432,6 +508,7 @@
     >
       <div
         class="modal-content bg-konvo-surface p-4 sm:p-6 rounded-xl border border-konvo-border w-full max-w-xs sm:max-w-sm flex flex-col gap-4 shadow-2xl"
+        role="document"
       >
         <h2 id="confirmModalTitle" class="text-base sm:text-lg font-bold text-konvo-text">🤔 Confirm</h2>
         <p id="confirmModalText" class="text-xs sm:text-sm text-konvo-muted">Are you sure?</p>
@@ -455,21 +532,48 @@
       id="contextMenu"
       role="menu"
       aria-label="Message actions"
+      aria-hidden="true"
     >
       <ul role="none">
         <li id="menuEdit" role="menuitem" tabindex="-1">✏️ Edit Message</li>
         <li id="menuDelete" role="menuitem" tabindex="-1" class="text-red-500 hover:text-red-400">
           🗑️ Delete Message
         </li>
-        <li class="separator" role="separator"></li>
+        <li class="separator" role="separator" aria-hidden="true"></li>
         <li id="menuSelect" role="menuitem" tabindex="-1">☑️ Select</li>
       </ul>
     </div>
 
+    <!-- Privacy Notice for reCAPTCHA (Required by Google) -->
+    <div id="recaptchaNotice" class="fixed bottom-16 sm:bottom-20 left-2 right-2 sm:left-4 sm:right-4 text-[8px] sm:text-[9px] text-konvo-muted text-center pointer-events-none opacity-50 z-0">
+      Protected by reCAPTCHA · 
+      <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" class="underline pointer-events-auto">Privacy</a> · 
+      <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer" class="underline pointer-events-auto">Terms</a>
+    </div>
+
     <!-- FingerprintJS CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
+    <script 
+      src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"
+      defer
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- 
+      reCAPTCHA v3 is loaded dynamically by app.js when RECAPTCHA_SITE_KEY is configured.
+      This avoids loading it unnecessarily and gives us control over when it initializes.
+    -->
 
     <!-- App Script -->
     <script type="module" src="app.js"></script>
+    
+    <!-- Noscript fallback -->
+    <noscript>
+      <div style="position: fixed; inset: 0; background: #0a0a0a; display: flex; align-items: center; justify-content: center; color: #888; font-family: sans-serif; text-align: center; padding: 2rem;">
+        <div>
+          <h1 style="color: #ef4444; font-size: 1.5rem; margin-bottom: 1rem;">JavaScript Required</h1>
+          <p>Konvo requires JavaScript to function. Please enable JavaScript in your browser settings.</p>
+        </div>
+      </div>
+    </noscript>
   </body>
 </html>

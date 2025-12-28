@@ -5,10 +5,8 @@
 
 /* ============================================================
    KONVO - OBSIDIAN THEME
-   Version: 2.2 (CSP Compliant)
+   Version: 3.0 (Security Hardened)
    ============================================================ */
-
-/* Import your existing custom styles below @tailwind directives */
 
 /* ============================
    1. CSS CUSTOM PROPERTIES
@@ -49,9 +47,77 @@
   --z-sticky: 200;
   --z-modal: 1000;
   --z-tooltip: 1100;
+  --z-ban-overlay: 99999;
 }
 
-/* Geometric Minimal Pattern */
+/* ============================
+   2. SECURITY-FOCUSED BASE STYLES
+   ============================ */
+
+/* Prevent text selection on interactive elements */
+button,
+[role="button"],
+.nav-item,
+.kebab-btn,
+.side-action-btn,
+.reaction-chip,
+.reaction-option {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Prevent image dragging */
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: auto;
+}
+
+/* Disable tap highlight on mobile */
+button,
+a,
+input,
+textarea,
+[role="button"],
+[tabindex] {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Hidden elements */
+[hidden],
+.hidden {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+/* External link indicator */
+a[target="_blank"]::after {
+  content: " ↗";
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+
+/* ============================
+   3. GEOMETRIC BACKGROUND PATTERN
+   ============================ */
+
 body::before {
   content: "";
   position: fixed;
@@ -83,19 +149,10 @@ body::after {
   background-size: 60px 60px;
 }
 
-/* Add after your :root section */
-html, body {
-  height: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
-  min-height: 100svh;
-}
-
 /* ============================
-   DYNAMIC VIEWPORT HEIGHT FIX
+   4. DYNAMIC VIEWPORT HEIGHT FIX
    ============================ */
 
-/* Use dynamic viewport height for mobile keyboard support */
 html {
   height: 100%;
   height: 100dvh;
@@ -115,7 +172,19 @@ body {
   flex-direction: column;
 }
 
-/* Ensure main content area adapts to keyboard */
+html, body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: 100svh;
+}
+
+@supports (height: 100dvh) {
+  body {
+    height: 100dvh;
+  }
+}
+
+/* Main content area adapts to keyboard */
 main {
   flex: 1;
   min-height: 0;
@@ -131,16 +200,14 @@ main {
   overflow-x: hidden;
 }
 
-/* Fixed forms at bottom - ensure they stay above keyboard */
+/* Fixed forms at bottom */
 #chatForm,
 #confessionForm {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  /* Use env() for safe areas on iOS */
   padding-bottom: max(6px, env(safe-area-inset-bottom));
-  /* Ensure forms are always visible */
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
 }
@@ -155,31 +222,18 @@ main {
 /* iOS Safari specific fix */
 @supports (-webkit-touch-callout: none) {
   body {
-    /* iOS specific height fix */
     min-height: -webkit-fill-available;
   }
   
   #chatForm,
   #confessionForm {
-    /* Prevent iOS bounce/scroll issues */
     position: fixed;
     bottom: env(safe-area-inset-bottom, 0);
   }
 }
 
-@supports (height: 100dvh) {
-  body {
-    height: 100dvh;
-  }
-}
 /* ============================
-   PASTE THE REST OF YOUR style.css CONTENT HERE
-   (Everything from section 2 onwards)
-   ============================ */
-
-/* ... rest of your existing style.css ... */
-/* ============================
-   2. BASE STYLES & RESETS
+   5. BASE STYLES & RESETS
    ============================ */
 
 *,
@@ -206,59 +260,7 @@ body {
 }
 
 /* ============================
-   3. SECURITY-FOCUSED STYLES
-   ============================ */
-
-button,
-a,
-input,
-textarea,
-[role="button"],
-[tabindex] {
-  -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.no-select {
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-}
-
-a[target="_blank"]::after {
-  content: " ↗";
-  font-size: 0.75em;
-  opacity: 0.7;
-}
-
-[hidden],
-.hidden {
-  display: none !important;
-  pointer-events: none !important;
-  visibility: hidden !important;
-}
-
-img {
-  -webkit-user-drag: none;
-  user-select: none;
-  pointer-events: auto;
-}
-
-/* ============================
-   4. SCROLLBAR STYLES
+   6. SCROLLBAR STYLES
    ============================ */
 
 ::-webkit-scrollbar {
@@ -286,7 +288,7 @@ img {
 }
 
 /* ============================
-   5. FORM ELEMENTS
+   7. FORM ELEMENTS
    ============================ */
 
 textarea,
@@ -357,7 +359,7 @@ a:focus-visible {
 }
 
 /* ============================
-   6. ANIMATIONS
+   8. ANIMATIONS
    ============================ */
 
 @media (prefers-reduced-motion: reduce) {
@@ -424,12 +426,52 @@ a:focus-visible {
   }
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes reactionPop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+}
+
 .shake {
   animation: shake 0.5s ease-in-out;
 }
 
 /* ============================
-   7. LOADING STATE
+   9. LOADING STATE
    ============================ */
 
 #loading {
@@ -441,7 +483,7 @@ a:focus-visible {
 }
 
 /* ============================
-   8. FEED CONTAINER (FIXED)
+   10. FEED CONTAINER
    ============================ */
 
 #feedContainer {
@@ -449,7 +491,7 @@ a:focus-visible {
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
-  padding-bottom: 4px; /* Changed from 8px */
+  padding-bottom: 4px;
   overflow-anchor: none;
   contain: layout style;
   flex: 1;
@@ -457,11 +499,11 @@ a:focus-visible {
 }
 
 /* ============================
-   9. MESSAGE BUBBLES (FIXED)
+   11. MESSAGE BUBBLES
    ============================ */
 
 .message-bubble {
-  background-color: rgba(28, 28, 28, 0.5); /* Changed from var(--surface) to semi-transparent */
+  background-color: rgba(28, 28, 28, 0.5);
   border: 1px solid var(--border-color);
   word-wrap: break-word;
   white-space: pre-wrap;
@@ -506,7 +548,7 @@ a:focus-visible {
 
 .message-bubble:hover {
   border-color: #444;
-  background-color: rgba(35, 35, 35, 0.6); /* Changed from #232323 to semi-transparent */
+  background-color: rgba(35, 35, 35, 0.6);
 }
 
 body.selection-mode .message-bubble {
@@ -521,14 +563,14 @@ body.selection-mode .message-bubble {
 .my-message {
   border: 1px solid var(--border-color);
   align-self: flex-end;
-  /* Remove any background-color property - JS handles it now */
 }
 
 .my-message:hover {
   border-color: #444;
 }
+
 .selected-message {
-  background-color: rgba(51, 51, 51, 0.7) !important; /* Changed from #333 to semi-transparent */
+  background-color: rgba(51, 51, 51, 0.7) !important;
   border-color: var(--text-main) !important;
   transform: scale(1.01);
 }
@@ -538,7 +580,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   10. MESSAGE FOOTER
+   12. MESSAGE FOOTER
    ============================ */
 
 .bubble-footer {
@@ -571,7 +613,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   11. BUBBLE WRAPPER
+   13. BUBBLE WRAPPER
    ============================ */
 
 .bubble-wrapper {
@@ -580,7 +622,7 @@ body.selection-mode .message-bubble {
   flex-direction: column;
   align-items: flex-start;
   max-width: 100%;
-  min-width: 0; /* allow bubble to shrink instead of forcing horizontal overflow */
+  min-width: 0;
 }
 
 .bubble-wrapper.my-bubble-wrapper {
@@ -588,7 +630,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   12. KEBAB MENU BUTTON (TOP CORNER OUTSIDE)
+   14. KEBAB MENU BUTTON
    ============================ */
 
 .kebab-btn {
@@ -614,13 +656,11 @@ body.selection-mode .message-bubble {
   transform: scale(0.8);
 }
 
-/* For my messages - position at top-left corner outside */
 .bubble-wrapper.my-bubble-wrapper .kebab-btn {
   right: auto;
   left: -32px;
 }
 
-/* Show on message-wrapper hover - same as reaction/reply */
 .message-wrapper:hover .kebab-btn {
   opacity: 0.4;
   visibility: visible;
@@ -644,7 +684,6 @@ body.selection-mode .message-bubble {
   outline-offset: 2px;
 }
 
-/* Touch devices - always show */
 @media (hover: none) and (pointer: coarse) {
   .kebab-btn {
     opacity: 0.5;
@@ -657,7 +696,6 @@ body.selection-mode .message-bubble {
   }
 }
 
-/* Small screens - adjust position */
 @media (max-width: 640px) {
   .kebab-btn {
     width: 24px;
@@ -670,13 +708,11 @@ body.selection-mode .message-bubble {
     left: -28px;
   }
 
-  /* On mobile, account for always-visible side action buttons to avoid horizontal scrolling */
   .message-bubble {
     max-width: calc(100vw - 140px);
   }
 }
 
-/* Extra small screens - tighter position */
 @media (max-width: 400px) {
   .kebab-btn {
     right: -22px;
@@ -691,7 +727,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   13. PROFILE PHOTOS
+   15. PROFILE PHOTOS
    ============================ */
 
 .chat-pfp {
@@ -718,7 +754,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   14. ADMIN BADGE
+   16. ADMIN BADGE
    ============================ */
 
 .admin-badge {
@@ -738,7 +774,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   15. MESSAGE WRAPPER & ACTIONS
+   17. MESSAGE WRAPPER & ACTIONS
    ============================ */
 
 .message-wrapper {
@@ -782,7 +818,6 @@ body.selection-mode .message-bubble {
   transform: scale(1.15) !important;
 }
 
-/* Touch devices - always show action buttons */
 @media (hover: none) and (pointer: coarse) {
   .side-action-btn {
     opacity: 0.5;
@@ -791,7 +826,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   16. REACTIONS
+   18. REACTIONS
    ============================ */
 
 .reaction-chips-container {
@@ -830,10 +865,15 @@ body.selection-mode .message-bubble {
   transform: translateY(-2px);
 }
 
+.reaction-chip:active {
+  transform: scale(0.9);
+}
+
 .reaction-chip.user-reacted {
   background-color: var(--border-color);
   border-color: var(--text-muted);
   color: var(--text-main);
+  animation: reactionPop 0.3s ease-out;
 }
 
 .reaction-picker {
@@ -868,7 +908,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   17. SCROLL TO BOTTOM BUTTON
+   19. SCROLL TO BOTTOM BUTTON
    ============================ */
 
 #scrollToBottomBtn {
@@ -925,12 +965,11 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   18. NAVIGATION
+   20. NAVIGATION
    ============================ */
 
 .nav-item {
   cursor: pointer;
-  /* padding: 8px 16px; handled by tailwind classes */
   border-bottom: 2px solid transparent;
   transition: all 0.3s ease;
   color: var(--text-muted);
@@ -946,7 +985,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   19. TYPING INDICATOR
+   21. TYPING INDICATOR
    ============================ */
 
 #typingIndicator {
@@ -961,7 +1000,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   20. REPLY BAR
+   22. REPLY BAR
    ============================ */
 
 #replyBar {
@@ -1048,7 +1087,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   21. CONTEXT MENU
+   23. CONTEXT MENU
    ============================ */
 
 #contextMenu {
@@ -1115,7 +1154,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   22. SELECTION BAR
+   24. SELECTION BAR
    ============================ */
 
 #selectionBar {
@@ -1138,7 +1177,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   23. MODALS
+   25. MODALS
    ============================ */
 
 .modal-base {
@@ -1167,9 +1206,6 @@ body.selection-mode .message-bubble {
   transform: scale(0.95) translateY(10px);
   opacity: 0;
   transition: all 0.3s var(--ease-out-expo);
-  /* NOTE: Do not force a responsive max-width here.
-     Individual modals set their own sizing via Tailwind classes (e.g. max-w-sm).
-     A global max-width was overriding those and causing the dialog to grow/shrink with the window. */
   max-height: 90vh;
   overflow: auto;
 }
@@ -1180,7 +1216,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   24. DATE SEPARATOR
+   26. DATE SEPARATOR
    ============================ */
 
 .date-separator {
@@ -1203,7 +1239,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   25. PINNED MESSAGE BAR
+   27. PINNED MESSAGE BAR
    ============================ */
 
 #pinnedMessageBar {
@@ -1218,13 +1254,11 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   26. INPUT FORMS (RESPONSIVE FIX)
+   28. INPUT FORMS
    ============================ */
 
 #chatForm,
 #confessionForm {
-  /* Responsive padding - let Tailwind classes work */
-  /* Mobile: p-1.5 (6px), Desktop: p-3 (12px) */
   padding-bottom: calc(6px + env(safe-area-inset-bottom));
   background-color: rgba(10, 10, 10, 0.98);
   border-top: 1px solid var(--border-color);
@@ -1244,7 +1278,6 @@ body.selection-mode .message-bubble {
 
 #chatInput,
 #confessionInput {
-  /* Responsive height - smaller on mobile */
   height: 36px;
   min-height: 36px;
   max-height: 100px;
@@ -1254,7 +1287,6 @@ body.selection-mode .message-bubble {
   resize: none;
   overflow-wrap: break-word;
   word-break: break-word;
-  /* Let Tailwind handle padding */
 }
 
 @media (min-width: 640px) {
@@ -1267,7 +1299,96 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   27. UTILITY CLASSES
+   29. CHARACTER COUNTER
+   ============================ */
+
+.char-counter {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  pointer-events: none;
+  user-select: none;
+  transition: color 0.2s ease;
+  opacity: 0;
+}
+
+#chatForm:focus-within .char-counter,
+#confessionForm:focus-within .char-counter,
+.char-counter.visible {
+  opacity: 1;
+}
+
+.char-counter.warning {
+  color: var(--warning);
+}
+
+.char-counter.danger {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.char-counter.limit {
+  color: var(--danger);
+  font-weight: 700;
+  animation: systemPulse 0.5s ease-in-out infinite;
+}
+
+/* ============================
+   30. BAN CHECK OVERLAY
+   ============================ */
+
+.ban-check-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--bg-color);
+  z-index: var(--z-ban-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ban-check-overlay.hidden {
+  display: none;
+  opacity: 0;
+}
+
+.ban-check-text {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  animation: systemPulse 2s ease-in-out infinite;
+}
+
+.device-banned .ban-check-overlay {
+  display: flex !important;
+}
+
+.device-banned-content {
+  text-align: center;
+}
+
+.device-banned-content h1 {
+  font-size: 1.875rem;
+  color: var(--danger);
+  margin-bottom: 1rem;
+}
+
+.device-banned-content p {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.device-banned-content .reason {
+  color: #666;
+  font-size: 0.75rem;
+}
+
+/* ============================
+   31. UTILITY CLASSES
    ============================ */
 
 .glow {
@@ -1310,34 +1431,20 @@ body.selection-mode .message-bubble {
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* ============================
-   28. BANNED USER OVERLAY
+   32. reCAPTCHA BADGE HIDE
    ============================ */
 
-.banned-overlay {
-  position: fixed;
-  inset: 0;
-  background-color: var(--bg-color);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 99999;
-  color: var(--danger);
-  font-weight: bold;
-  gap: var(--spacing-md);
-  pointer-events: all;
-  user-select: none;
+.grecaptcha-badge {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: fixed !important;
+  bottom: -100px !important;
 }
 
 /* ============================
-   29. PRINT STYLES
+   33. PRINT STYLES
    ============================ */
 
 @media print {
@@ -1352,7 +1459,9 @@ body.selection-mode .message-bubble {
   #chatForm,
   #confessionForm,
   #typingIndicator,
-  #pinnedMessageBar {
+  #pinnedMessageBar,
+  #recaptchaNotice,
+  .grecaptcha-badge {
     display: none !important;
   }
 
@@ -1370,7 +1479,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   30. HIGH CONTRAST MODE
+   34. HIGH CONTRAST MODE
    ============================ */
 
 @media (prefers-contrast: high) {
@@ -1391,7 +1500,7 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   31. DARK MODE ENFORCEMENT
+   35. DARK MODE ENFORCEMENT
    ============================ */
 
 @media (prefers-color-scheme: light) {
@@ -1401,156 +1510,9 @@ body.selection-mode .message-bubble {
 }
 
 /* ============================
-   32. CHARACTER COUNTER
+   36. SPAM WARNING TOAST
    ============================ */
-
-.char-counter {
-  position: absolute;
-  /* Positioned inside the textarea container (see index.html wrapper) */
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  font-weight: 500;
-  pointer-events: none;
-  user-select: none;
-  transition: color 0.2s ease;
-  opacity: 0;
-}
-
-/* Show counter when input is focused or has content */
-#chatForm:focus-within .char-counter,
-#confessionForm:focus-within .char-counter,
-.char-counter.visible {
-  opacity: 1;
-}
-
-/* Warning state - approaching limit */
-.char-counter.warning {
-  color: var(--warning);
-}
-
-/* Danger state - near limit */
-.char-counter.danger {
-  color: var(--danger);
-  font-weight: 700;
-}
-
-/* At limit */
-.char-counter.limit {
-  color: var(--danger);
-  font-weight: 700;
-  animation: systemPulse 0.5s ease-in-out infinite;
-}
-
-/* ============================
-   33. BAN CHECK OVERLAY
-   ============================ */
-
-.ban-check-overlay {
-  position: fixed;
-  inset: 0;
-  background-color: var(--bg-color);
-  z-index: 99999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ban-check-overlay.hidden {
-  display: none;
-  opacity: 0;
-}
-
-.ban-check-text {
-  color: var(--text-muted);
-  font-size: 0.875rem;
-  animation: systemPulse 2s ease-in-out infinite;
-}
-
-/* Device banned state */
-.device-banned .ban-check-overlay {
-  display: flex !important;
-}
-
-.device-banned-content {
-  text-align: center;
-}
-
-.device-banned-content h1 {
-  font-size: 1.875rem;
-  color: var(--danger);
-  margin-bottom: 1rem;
-}
-
-.device-banned-content p {
-  color: var(--text-muted);
-  font-size: 0.875rem;
-  margin-bottom: 0.5rem;
-}
-
-.device-banned-content .reason {
-  color: #666;
-  font-size: 0.75rem;
-}
-
-/* ============================
-   35. SPAM WARNING TOAST
-   ============================ */
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-}
-
-@keyframes fadeOut {
-  from {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-10px);
-  }
-}
 
 #spam-warning-toast {
   font-family: 'Inter', sans-serif;
-}
-
-
-
-
-
-
-/* Reaction pop animation */
-.reaction-chip {
-  transition: transform 0.15s ease-out;
-}
-
-.reaction-chip:active {
-  transform: scale(0.9);
-}
-
-.reaction-chip.user-reacted {
-  animation: reactionPop 0.3s ease-out;
-}
-
-@keyframes reactionPop {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.3);
-  }
-  100% {
-    transform: scale(1);
-  }
 }
