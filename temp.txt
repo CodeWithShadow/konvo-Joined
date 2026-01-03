@@ -1,72 +1,42 @@
 'use strict';
 
-// ============================================================
-// KONVO - ANONYMOUS CHAT APPLICATION
-// Version: 3.0 (Security Hardened)
-// 
-// Security Fixes Applied:
-// - Issue #4: Removed client-side IP detection (server-side only)
-// - Issue #6: Improved fallback fingerprint with more entropy
-// - Issue #15: Added reCAPTCHA v3 integration
-// - Issue #20: Sanitized all error messages
-// - Issue #22: Sanitized notification content
-// - Issue #23: Moved message sending to Cloud Functions
-// ============================================================
-
-// ============================
-// MOBILE VIEWPORT SETUP
-// ============================
 (function setupMobileViewport() {
   let pendingUpdate = false;
-  
   const apply = () => {
     if (pendingUpdate) return;
     pendingUpdate = true;
-    
     requestAnimationFrame(() => {
       const viewport = window.visualViewport;
       const height = viewport?.height || window.innerHeight;
       const offsetTop = viewport?.offsetTop || 0;
-      
       document.documentElement.style.setProperty('--app-height', `${height}px`);
       document.documentElement.style.setProperty('--viewport-offset', `${offsetTop}px`);
-      
       if (document.body) {
         document.body.style.height = `${height}px`;
         document.body.style.maxHeight = `${height}px`;
       }
-      
-      if (typeof state !== 'undefined' && state?.userIsAtBottom && typeof feedContainer !== 'undefined' && feedContainer) {
+      if (typeof state !== 'undefined' && state?.userIsAtBottom && feedContainer) {
         feedContainer.scrollTop = feedContainer.scrollHeight;
       }
-      
       pendingUpdate = false;
     });
   };
-  
   apply();
-  
   let resizeTimeout;
   const debouncedApply = () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(apply, 50);
   };
-  
   window.addEventListener('resize', debouncedApply, { passive: true });
-  
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', apply, { passive: true });
     window.visualViewport.addEventListener('scroll', apply, { passive: true });
   }
-  
   window.addEventListener('orientationchange', () => {
     setTimeout(apply, 100);
   }, { passive: true });
 })();
 
-// ============================
-// FIREBASE IMPORTS
-// ============================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
 import {
@@ -89,17 +59,563 @@ import {
   writeBatch,
   arrayUnion,
   arrayRemove,
-  connectFirestoreEmulator,
 } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore.js";
-import {
-  getFunctions,
-  httpsCallable,
-  connectFunctionsEmulator,
-} from "https://www.gstatic.com/firebasejs/9.22.1/firebase-functions.js";
 
-// ============================
-// CONFIGURATION
-// ============================
+const deviceState = {
+  fingerprint: null,
+  ipAddress: null,
+  isIdentified: false,
+  isBannedDevice: false,
+};
+
+function withTimeout(promise, ms, fallbackValue = null) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallbackValue), ms))
+  ]);
+}
+
+const FINGERPRINT_STORAGE_KEY = 'konvo_device_fp';
+
+async function generateDeviceFingerprint() {
+  try {
+    const savedFingerprint = localStorage.getItem(FINGERPRINT_STORAGE_KEY);
+    if (savedFingerprint && savedFingerprint.length > 0) {
+      deviceState.fingerprint = savedFingerprint;
+      return savedFingerprint;
+    }
+  } catch (e) {}
+  try {
+    if (typeof FingerprintJS === 'undefined') {
+      return createAndSaveStableFallback();
+    }
+    const fp = await withTimeout(FingerprintJS.load(), 5000, null);
+    if (!fp) {
+      return createAndSaveStableFallback();
+    }
+    const result = await withTimeout(fp.get(), 5000, null);
+    if (!result) {
+      return createAndSaveStableFallback();
+    }
+    const fingerprint = result.visitorId;
+    saveFingerprint(fingerprint);
+    deviceState.fingerprint = fingerprint;
+    return fingerprint;
+  } catch (error) {
+    return createAndSaveStableFallback();
+  }
+}
+
+function createAndSaveStableFallback() {
+  try {
+    const savedFingerprint = localStorage.getItem(FINGERPRINT_STORAGE_KEY);
+    if (savedFingerprint && savedFingerprint.length > 0) {
+      deviceState.fingerprint = savedFingerprint;
+      return savedFingerprint;
+    }
+  } catch (e) {}
+  const components = [
+    navigator.userAgent,
+    navigator.language,
+    screen.width + 'x' + screen.height,
+    screen.colorDepth,
+    new Date().getTimezoneOffset(),
+    navigator.hardwareConcurrency || 'unknown',
+    navigator.deviceMemory || 'unknown',
+    navigator.platform,
+  ];
+  let hash = 0;
+  const str = components.join('|||');
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  const randomPart = generateRandomString(8);
+  const fallbackId = 'fb_' + Math.abs(hash).toString(36) + '_' + randomPart;
+  saveFingerprint(fallbackId);
+  deviceState.fingerprint = fallbackId;
+  return fallbackId;
+}
+
+function generateRandomString(length) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  try {
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+    for (let i = 0; i < length; i++) {
+      result += chars[array[i] % chars.length];
+    }
+    return result;
+  } catch (e) {
+    for (let i = 0; i < length; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+  }
+}
+
+function saveFingerprint(fingerprint) {
+  try {
+    localStorage.setItem(FINGERPRINT_STORAGE_KEY, fingerprint);
+  } catch (e) {}
+}
+
+async function getUserIPAddress() {
+  const ipServices = [
+    'https://api.ipify.org?format=json',
+    'https://ipapi.co/json/'
+  ];
+  try {
+    const fetchPromises = ipServices.map(async (service) => {
+      const response = await fetch(service, { mode: 'cors' });
+      if (!response.ok) throw new Error('Failed');
+      const data = await response.json();
+      if (data.ip && isValidIP(data.ip)) {
+        return data.ip;
+      }
+      throw new Error('Invalid IP');
+    });
+    const result = await withTimeout(
+      Promise.any(fetchPromises),
+      3000,
+      null
+    );
+    if (result) {
+      deviceState.ipAddress = result;
+      return result;
+    }
+  } catch (error) {}
+  return null;
+}
+
+function isValidIP(ip) {
+  if (!ip || typeof ip !== 'string') return false;
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  const ipv6Pattern = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^([0-9a-fA-F]{1,4}:)*:([0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}$|^::$/;
+  if (ipv4Pattern.test(ip)) {
+    const parts = ip.split('.').map(Number);
+    return parts.every(part => part >= 0 && part <= 255);
+  }
+  return ipv6Pattern.test(ip);
+}
+
+function hashIP(ip) {
+  if (!ip) return '';
+  let hash = 0;
+  for (let i = 0; i < ip.length; i++) {
+    const char = ip.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return 'ip_' + Math.abs(hash).toString(36);
+}
+
+async function initializeDeviceIdentification() {
+  try {
+    const result = await withTimeout(
+      Promise.all([
+        generateDeviceFingerprint(),
+        getUserIPAddress()
+      ]),
+      8000,
+      null
+    );
+    if (!result) {
+      return {
+        fingerprint: createAndSaveStableFallback(),
+        ipAddress: null,
+        ipHash: null,
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        screenResolution: `${screen.width}x${screen.height}`,
+        platform: navigator.platform,
+      };
+    }
+    const [fingerprint, ipAddress] = result;
+    deviceState.fingerprint = fingerprint;
+    deviceState.ipAddress = ipAddress;
+    deviceState.isIdentified = true;
+    return {
+      fingerprint,
+      ipAddress,
+      ipHash: hashIP(ipAddress),
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      screenResolution: `${screen.width}x${screen.height}`,
+      platform: navigator.platform,
+    };
+  } catch (error) {
+    return {
+      fingerprint: createAndSaveStableFallback(),
+      ipAddress: null,
+      ipHash: null,
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      timezone: null,
+      screenResolution: `${screen.width}x${screen.height}`,
+      platform: navigator.platform,
+    };
+  }
+}
+
+async function checkDeviceBan(db, deviceInfo) {
+  if (!db || !deviceInfo) {
+    return { isBanned: false, reason: null };
+  }
+  try {
+    if (deviceInfo.fingerprint) {
+      const fingerprintBanRef = doc(db, "banned_devices", deviceInfo.fingerprint);
+      const fingerprintBanSnap = await getDoc(fingerprintBanRef);
+      if (fingerprintBanSnap.exists()) {
+        const banData = fingerprintBanSnap.data();
+        return {
+          isBanned: true,
+          reason: 'Device banned',
+          bannedAt: banData.timestamp,
+          banType: 'fingerprint'
+        };
+      }
+    }
+    if (deviceInfo.ipAddress) {
+      const ipHash = hashIP(deviceInfo.ipAddress);
+      const ipBanRef = doc(db, "banned_ips", ipHash);
+      const ipBanSnap = await getDoc(ipBanRef);
+      if (ipBanSnap.exists()) {
+        const banData = ipBanSnap.data();
+        return {
+          isBanned: true,
+          reason: 'IP address banned',
+          bannedAt: banData.timestamp,
+          banType: 'ip'
+        };
+      }
+      const rawIpBanRef = doc(db, "banned_ips", deviceInfo.ipAddress.replace(/\./g, '_'));
+      const rawIpBanSnap = await getDoc(rawIpBanRef);
+      if (rawIpBanSnap.exists()) {
+        return {
+          isBanned: true,
+          reason: 'IP address banned',
+          banType: 'ip'
+        };
+      }
+    }
+    return { isBanned: false, reason: null };
+  } catch (error) {
+    return { isBanned: false, reason: null, error: error.message };
+  }
+}
+
+async function isMyDeviceBanned(db, userId, fingerprint) {
+  if (!db || !userId || !fingerprint) return false;
+  try {
+    const deviceDocId = `${userId}_${fingerprint}`;
+    const deviceRef = doc(db, "user_devices", deviceDocId);
+    const deviceSnap = await getDoc(deviceRef);
+    if (!deviceSnap.exists()) return false;
+    const banRef = doc(db, "banned_devices", fingerprint);
+    const banSnap = await getDoc(banRef);
+    return banSnap.exists();
+  } catch (error) {
+    return false;
+  }
+}
+
+async function registerDevice(db, userId, deviceInfo) {
+  if (!db || !userId || !deviceInfo?.fingerprint) return;
+  try {
+    const deviceDocId = `${userId}_${deviceInfo.fingerprint}`;
+    const deviceRef = doc(db, "user_devices", deviceDocId);
+    const userRef = doc(db, "users", userId);
+    const deviceSnap = await getDoc(deviceRef);
+    if (deviceSnap.exists()) {
+      await updateDoc(deviceRef, {
+        lastSeen: serverTimestamp(),
+        ipAddress: deviceInfo.ipAddress || null,
+        ipHash: deviceInfo.ipHash || null,
+        userAgent: deviceInfo.userAgent || null,
+      });
+    } else {
+      const batch = writeBatch(db);
+      batch.set(deviceRef, {
+        userId: userId,
+        fingerprint: deviceInfo.fingerprint,
+        ipAddress: deviceInfo.ipAddress || null,
+        ipHash: deviceInfo.ipHash || null,
+        userAgent: deviceInfo.userAgent || null,
+        language: deviceInfo.language || null,
+        timezone: deviceInfo.timezone || null,
+        screenResolution: deviceInfo.screenResolution || null,
+        platform: deviceInfo.platform || null,
+        firstSeen: serverTimestamp(),
+        lastSeen: serverTimestamp(),
+      });
+      batch.set(userRef, {
+        lastDeviceReg: serverTimestamp()
+      }, { merge: true });
+      await batch.commit();
+    }
+  } catch (error) {}
+}
+
+function hideBanCheckOverlay() {
+  const overlay = document.getElementById('banCheckOverlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+    setTimeout(() => {
+      overlay.style.display = 'none';
+    }, 300);
+  }
+}
+
+async function checkFullUnbanStatus() {
+  if (!state.db || !state.deviceInfo) return;
+  try {
+    let stillBanned = false;
+    if (state.currentUserId) {
+      const userBanRef = doc(state.db, "banned_users", state.currentUserId);
+      const userBanSnap = await getDoc(userBanRef);
+      if (userBanSnap.exists()) stillBanned = true;
+    }
+    if (!stillBanned && state.deviceInfo.fingerprint) {
+      const fpBanRef = doc(state.db, "banned_devices", state.deviceInfo.fingerprint);
+      const fpBanSnap = await getDoc(fpBanRef);
+      if (fpBanSnap.exists()) stillBanned = true;
+    }
+    if (!stillBanned && state.deviceInfo.ipHash) {
+      const ipBanRef = doc(state.db, "banned_ips", state.deviceInfo.ipHash);
+      const ipBanSnap = await getDoc(ipBanRef);
+      if (ipBanSnap.exists()) stillBanned = true;
+    }
+    if (!stillBanned && state.deviceInfo.ipAddress) {
+      const rawIpKey = state.deviceInfo.ipAddress.replace(/\./g, '_');
+      const rawIpBanRef = doc(state.db, "banned_ips", rawIpKey);
+      const rawIpBanSnap = await getDoc(rawIpBanRef);
+      if (rawIpBanSnap.exists()) stillBanned = true;
+    }
+    if (!stillBanned) {
+      state.isBanned = false;
+      state.isDeviceBanned = false;
+      showUnbannedScreen();
+    }
+  } catch (error) {}
+}
+
+function showDeviceBannedScreen(reason = 'Device banned') {
+  const appContainer = document.getElementById('app') || document.body;
+  Array.from(appContainer.children).forEach(child => {
+    if (child.id !== 'banOverlayScreen') {
+      child.style.display = 'none';
+    }
+  });
+  const existingOverlay = document.getElementById('banOverlayScreen');
+  if (existingOverlay) existingOverlay.remove();
+  const existingCheck = document.getElementById('banCheckOverlay');
+  if (existingCheck) existingCheck.style.display = 'none';
+  const overlay = document.createElement('div');
+  overlay.id = 'banOverlayScreen';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    background-color: #0a0a0a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+    gap: 0.5rem;
+    padding: 1rem;
+  `;
+  const h1 = document.createElement('h1');
+  h1.style.cssText = 'font-size: 1.875rem; color: #ef4444; font-weight: bold;';
+  h1.textContent = '🚫 ACCESS DENIED';
+  const p1 = document.createElement('p');
+  p1.style.cssText = 'color: #888; font-size: 0.875rem;';
+  p1.textContent = 'This device has been banned from Konvo.';
+  const p2 = document.createElement('p');
+  p2.style.cssText = 'color: #666; font-size: 0.75rem;';
+  p2.textContent = 'Reason: ' + sanitizeText(reason);
+  const p3 = document.createElement('p');
+  p3.style.cssText = 'color: #555; font-size: 0.75rem; margin-top: 1rem;';
+  p3.textContent = 'If you believe this is a mistake, please wait for admin review.';
+  overlay.appendChild(h1);
+  overlay.appendChild(p1);
+  overlay.appendChild(p2);
+  overlay.appendChild(p3);
+  document.body.appendChild(overlay);
+  document.body.classList.add('device-banned');
+}
+
+function sanitizeText(text) {
+  if (typeof text !== 'string') return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\r?\n/g, ' ')
+    .replace(/`/g, '&#x60;');
+}
+
+function isValidUsername(username) {
+  if (typeof username !== 'string') return false;
+  const trimmed = username.trim();
+  if (trimmed.length === 0 || trimmed.length > 30) return false;
+  const reserved = ['anonymous', 'admin', 'moderator', 'system', 'konvo', 'mod'];
+  const lowerUsername = trimmed.toLowerCase();
+  if (reserved.some(r => lowerUsername === r || lowerUsername.includes(r))) {
+    return false;
+  }
+  const usernameRegex = /^[A-Za-z0-9_\- ]+$/;
+  return usernameRegex.test(trimmed);
+}
+
+function isValidMessageText(text) {
+  if (typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed.length > MESSAGE_MAX_LENGTH) return false;
+  const controlCharRegex = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+  return !controlCharRegex.test(trimmed);
+}
+
+function isValidProfilePhotoURL(url) {
+  if (typeof url !== 'string') return false;
+  if (url.length > 500) return false;
+  const allowedPatterns = [
+    /^https:\/\/placehold\.co\/.+$/,
+    /^https:\/\/ui-avatars\.com\/.+$/,
+    /^https:\/\/api\.dicebear\.com\/.+$/,
+  ];
+  return allowedPatterns.some(pattern => pattern.test(url));
+}
+
+function validateMessageBeforePost(text) {
+  if (typeof text !== 'string') {
+    return { valid: false, error: "Invalid message format" };
+  }
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, error: "Message cannot be empty" };
+  }
+  if (trimmed.length > MESSAGE_MAX_LENGTH) {
+    return { valid: false, error: `Message too long (max ${MESSAGE_MAX_LENGTH} characters)` };
+  }
+  const controlCharRegex = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+  if (controlCharRegex.test(trimmed)) {
+    return { valid: false, error: "Message contains invalid characters" };
+  }
+  return { valid: true, text: trimmed };
+}
+
+function setTextSafely(element, text) {
+  if (element && element instanceof HTMLElement) {
+    element.textContent = text || '';
+  }
+}
+
+function createSafeTextNode(text) {
+  return document.createTextNode(text || '');
+}
+
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+function throttle(func, limit) {
+  let inThrottle;
+  return function(...args) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  };
+}
+
+function escapeSelector(selector) {
+  if (typeof selector !== 'string') return '';
+  return CSS.escape(selector);
+}
+
+function createEnabledBellIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path1 = document.createElementNS(ns, "path");
+  path1.setAttribute("d", "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9");
+  const path2 = document.createElementNS(ns, "path");
+  path2.setAttribute("d", "M13.73 21a2 2 0 0 1-3.46 0");
+  svg.appendChild(path1);
+  svg.appendChild(path2);
+  return svg;
+}
+
+function createDisabledBellIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const paths = [
+    "M13.73 21a2 2 0 0 1-3 0",
+    "M18.63 13A17.89 17.89 0 0 1 18 8",
+    "M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14",
+    "M18 8a6 6 0 0 0-9.33-5"
+  ];
+  paths.forEach(d => {
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  });
+  const line = document.createElementNS(ns, "line");
+  line.setAttribute("x1", "1");
+  line.setAttribute("y1", "1");
+  line.setAttribute("x2", "23");
+  line.setAttribute("y2", "23");
+  svg.appendChild(line);
+  return svg;
+}
+
+function createKebabIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z");
+  svg.appendChild(path);
+  return svg;
+}
+
 const firebaseConfig = {
   apiKey: "AIzaSyDlijum_4JJ0V4eeE_AZS-T-ROGfby9o7Q",
   authDomain: "konvo-endgame.firebaseapp.com",
@@ -109,57 +625,8 @@ const firebaseConfig = {
   appId: "1:297152484978:web:d6a2907445c6c431cb14eb"
 };
 
-// reCAPTCHA Configuration (Issue #15)
-const RECAPTCHA_SITE_KEY = ''; // Add your reCAPTCHA v3 site key here
-const RECAPTCHA_ENABLED = RECAPTCHA_SITE_KEY.length > 0;
+const appStartTime = Date.now();
 
-// Use emulators in development (set to false for production)
-const USE_EMULATORS = false;
-
-// ============================
-// CONSTANTS
-// ============================
-const MESSAGE_MAX_LENGTH = 500;
-const USERNAME_MAX_LENGTH = 30;
-const TYPING_TIMEOUT = 3000;
-const TYPING_STALE_THRESHOLD = 5000;
-
-// Client-side rate limiting (backup - server is authoritative)
-const CLIENT_RATE_LIMITS = Object.freeze({
-  MESSAGE_COOLDOWN_MS: 1000,
-  REACTION_COOLDOWN_MS: 500,
-  TYPING_COOLDOWN_MS: 300,
-});
-
-const REACTION_TYPES = Object.freeze({
-  thumbsup: "👍",
-  laugh: "😂",
-  surprised: "😮",
-  heart: "❤️",
-  skull: "💀"
-});
-
-const USER_COLORS = Object.freeze([
-  "#ff79c6", "#8be9fd", "#50fa7b", "#bd93f9", "#ffb86c",
-  "#f1fa8c", "#ff5555", "#00e5ff", "#fab1a0", "#a29bfe",
-  "#55efc4", "#fdcb6e", "#e17055", "#d63031", "#e84393",
-  "#0984e3", "#00b894"
-]);
-
-// Generic error messages (Issue #20)
-const ERROR_MESSAGES = Object.freeze({
-  GENERIC: "Something went wrong. Please try again.",
-  NETWORK: "Connection issue. Please check your network.",
-  BANNED: "Access denied.",
-  RATE_LIMIT: "Please slow down.",
-  AUTH: "Please sign in again.",
-  PROFILE_REQUIRED: "Please set up your profile first.",
-  INVALID_INPUT: "Invalid input. Please try again.",
-});
-
-// ============================
-// DOM ELEMENTS
-// ============================
 const elements = {
   feedContainer: document.getElementById("feedContainer"),
   loading: document.getElementById("loading"),
@@ -221,57 +688,23 @@ const {
 let menuPin = null;
 let menuBan = null;
 
-// ============================
-// APPLICATION STATE
-// ============================
-const appStartTime = Date.now();
-
 const state = {
-  // Firebase instances
   app: null,
   db: null,
   auth: null,
-  functions: null,
-  
-  // Cloud Functions references
-  cloudFunctions: {
-    sendMessage: null,
-    registerDevice: null,
-    updateReaction: null,
-    updateTypingStatus: null,
-    updateProfile: null,
-    checkBanStatus: null,
-  },
-  
-  // User state
   currentUserId: null,
   currentUsername: "Anonymous",
   currentProfilePhotoURL: null,
   isCurrentUserAdmin: false,
-  
-  // Device state
-  deviceInfo: {
-    fingerprint: null,
-    isIdentified: false,
-  },
-  
-  // Ban state
-  isBanned: false,
-  isDeviceBanned: false,
-  
-  // Cache
+  deviceInfo: null,
   userProfiles: {},
   lastConfessionDocs: [],
   lastChatDocs: [],
   pendingProfileLoads: new Set(),
   profileLoadTimeout: null,
-  
-  // Collections
   confessionsCollection: null,
   chatCollection: null,
   typingStatusCollection: null,
-  
-  // UI state
   currentPage: "chat",
   isSelectionMode: false,
   selectedMessages: new Set(),
@@ -285,16 +718,17 @@ const state = {
   collectionToEdit: null,
   typingTimeout: null,
   isInitialized: false,
-  
-  // Rate limiting (client-side backup)
-  lastMessageTime: 0,
-  lastReactionTime: 0,
-  lastTypingTime: 0,
+  isBanned: false,
+  isDeviceBanned: false,
 };
 
-// ============================
-// LISTENER MANAGEMENT
-// ============================
+const spamTracker = {
+  messageTimestamps: [],
+  warningShown: false,
+  lastCleanup: Date.now(),
+  lastMessageTime: 0,
+};
+
 const unsubscribers = {
   confessions: () => {},
   chat: () => {},
@@ -306,135 +740,35 @@ const unsubscribers = {
   ipBanCheck: () => {},
 };
 
-// ============================
-// UTILITY FUNCTIONS
-// ============================
+const REACTION_TYPES = Object.freeze({
+  thumbsup: "👍",
+  laugh: "😂",
+  surprised: "😮",
+  heart: "❤️",
+  skull: "💀"
+});
 
-/**
- * Sanitize text for display (XSS prevention)
- */
-function sanitizeText(text) {
-  if (typeof text !== 'string') return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-    .replace(/\//g, '&#x2F;')
-    .replace(/`/g, '&#x60;');
-}
+const USER_COLORS = Object.freeze([
+  "#ff79c6", "#8be9fd", "#50fa7b", "#bd93f9", "#ffb86c",
+  "#f1fa8c", "#ff5555", "#00e5ff", "#fab1a0", "#a29bfe",
+  "#55efc4", "#fdcb6e", "#e17055", "#d63031", "#e84393",
+  "#0984e3", "#00b894"
+]);
 
-/**
- * Sanitize text for notifications (Issue #22)
- */
-function sanitizeNotificationText(text, maxLength = 100) {
-  if (typeof text !== 'string') return '';
-  
-  // Remove control characters
-  let sanitized = text.replace(/[\x00-\x1F\x7F]/g, '');
-  
-  // Remove potential script injection attempts
-  sanitized = sanitized.replace(/<[^>]*>/g, '');
-  
-  // Truncate
-  if (sanitized.length > maxLength) {
-    sanitized = sanitized.substring(0, maxLength - 3) + '...';
-  }
-  
-  return sanitized;
-}
+const MESSAGE_MAX_LENGTH = 500;
+const USERNAME_MAX_LENGTH = 30;
+const TYPING_TIMEOUT = 3000;
+const TYPING_STALE_THRESHOLD = 5000;
+const MESSAGE_COOLDOWN = 1000;
 
-/**
- * Set text content safely
- */
-function setTextSafely(element, text) {
-  if (element && element instanceof HTMLElement) {
-    element.textContent = text || '';
-  }
-}
+const SPAM_CONFIG = Object.freeze({
+  MAX_MESSAGES: 10,
+  TIME_WINDOW: 10000,
+  WARNING_THRESHOLD: 4,
+  CLEANUP_INTERVAL: 15000,
+  CF_BAN_THRESHOLD: 7,
+});
 
-/**
- * Get generic error message (Issue #20)
- */
-function getGenericErrorMessage(error) {
-  if (!error) return ERROR_MESSAGES.GENERIC;
-  
-  const code = error.code || '';
-  
-  // Map error codes to generic messages
-  if (code.includes('unauthenticated') || code.includes('auth')) {
-    return ERROR_MESSAGES.AUTH;
-  }
-  if (code.includes('permission-denied') || code.includes('banned')) {
-    return ERROR_MESSAGES.BANNED;
-  }
-  if (code.includes('resource-exhausted') || code.includes('rate')) {
-    return ERROR_MESSAGES.RATE_LIMIT;
-  }
-  if (code.includes('invalid-argument')) {
-    return ERROR_MESSAGES.INVALID_INPUT;
-  }
-  if (code.includes('unavailable') || code.includes('network')) {
-    return ERROR_MESSAGES.NETWORK;
-  }
-  if (code.includes('failed-precondition') && error.message?.includes('profile')) {
-    return ERROR_MESSAGES.PROFILE_REQUIRED;
-  }
-  
-  return ERROR_MESSAGES.GENERIC;
-}
-
-/**
- * Debounce function
- */
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
-/**
- * Throttle function
- */
-function throttle(func, limit) {
-  let inThrottle;
-  return function(...args) {
-    if (!inThrottle) {
-      func.apply(this, args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  };
-}
-
-/**
- * Promise with timeout
- */
-function withTimeout(promise, ms, fallbackValue = null) {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => setTimeout(() => resolve(fallbackValue), ms))
-  ]);
-}
-
-/**
- * Escape CSS selector
- */
-function escapeSelector(selector) {
-  if (typeof selector !== 'string') return '';
-  return CSS.escape(selector);
-}
-
-/**
- * Get user color from user ID
- */
 function getUserColor(userId) {
   if (!userId || typeof userId !== 'string') return USER_COLORS[0];
   let hash = 0;
@@ -445,9 +779,6 @@ function getUserColor(userId) {
   return USER_COLORS[index];
 }
 
-/**
- * Format message time
- */
 function formatMessageTime(date) {
   if (!(date instanceof Date) || isNaN(date)) {
     return 'Just now';
@@ -464,9 +795,6 @@ function formatMessageTime(date) {
   });
 }
 
-/**
- * Get date header
- */
 function getDateHeader(date) {
   if (!(date instanceof Date) || isNaN(date)) {
     return 'Today';
@@ -483,448 +811,209 @@ function getDateHeader(date) {
   });
 }
 
-// ============================
-// VALIDATION FUNCTIONS
-// ============================
-
-/**
- * Validate username
- */
-function isValidUsername(username) {
-  if (typeof username !== 'string') return false;
-  const trimmed = username.trim();
-  if (trimmed.length === 0 || trimmed.length > USERNAME_MAX_LENGTH) return false;
-  
-  const reserved = ['anonymous', 'admin', 'moderator', 'system', 'konvo', 'mod', 'support', 'staff', 'official', 'root', 'owner', 'bot', 'help'];
-  const lowerUsername = trimmed.toLowerCase();
-  
-  for (const word of reserved) {
-    if (lowerUsername === word || lowerUsername.includes(word)) {
-      return false;
-    }
-  }
-  
-  const usernameRegex = /^[A-Za-z0-9_\- ]+$/;
-  return usernameRegex.test(trimmed);
-}
-
-/**
- * Validate message text
- */
-function isValidMessageText(text) {
-  if (typeof text !== 'string') return false;
-  const trimmed = text.trim();
-  if (trimmed.length === 0 || trimmed.length > MESSAGE_MAX_LENGTH) return false;
-  const controlCharRegex = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
-  return !controlCharRegex.test(trimmed);
-}
-
-/**
- * Validate message before posting
- */
-function validateMessageBeforePost(text) {
-  if (typeof text !== 'string') {
-    return { valid: false, error: "Invalid message format" };
-  }
-  const trimmed = text.trim();
-  if (trimmed.length === 0) {
-    return { valid: false, error: "Message cannot be empty" };
-  }
-  if (trimmed.length > MESSAGE_MAX_LENGTH) {
-    return { valid: false, error: `Message too long (max ${MESSAGE_MAX_LENGTH} characters)` };
-  }
-  const controlCharRegex = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
-  if (controlCharRegex.test(trimmed)) {
-    return { valid: false, error: "Message contains invalid characters" };
-  }
-  return { valid: true, text: trimmed };
-}
-
-/**
- * Validate profile photo URL
- */
-function isValidProfilePhotoURL(url) {
-  if (typeof url !== 'string') return false;
-  if (url.length > 500) return false;
-  const allowedPatterns = [
-    /^https:\/\/placehold\.co\/.+$/,
-    /^https:\/\/ui-avatars\.com\/.+$/,
-    /^https:\/\/api\.dicebear\.com\/.+$/,
-  ];
-  return allowedPatterns.some(pattern => pattern.test(url));
-}
-
-// ============================
-// DEVICE FINGERPRINTING (Issue #6 - Improved)
-// ============================
-const FINGERPRINT_STORAGE_KEY = 'konvo_device_fp';
-
-/**
- * Generate cryptographically secure random string
- */
-function generateSecureRandomString(length) {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  
-  try {
-    const array = new Uint8Array(length);
-    crypto.getRandomValues(array);
-    for (let i = 0; i < length; i++) {
-      result += chars[array[i] % chars.length];
-    }
-    return result;
-  } catch (e) {
-    // Fallback with multiple entropy sources (Issue #6)
-    const entropy = [
-      Date.now().toString(36),
-      Math.random().toString(36).substring(2),
-      performance.now().toString(36),
-      (typeof screen !== 'undefined' ? screen.width * screen.height : 0).toString(36),
-    ].join('');
-    
-    for (let i = 0; i < length; i++) {
-      const index = (entropy.charCodeAt(i % entropy.length) + Math.random() * 256) % chars.length;
-      result += chars[Math.floor(index)];
-    }
-    return result;
-  }
-}
-
-/**
- * Generate device fingerprint (Issue #6 - Enhanced entropy)
- */
-async function generateDeviceFingerprint() {
-  // Try to load saved fingerprint first
-  try {
-    const savedFingerprint = localStorage.getItem(FINGERPRINT_STORAGE_KEY);
-    if (savedFingerprint && savedFingerprint.length >= 16) {
-      state.deviceInfo.fingerprint = savedFingerprint;
-      return savedFingerprint;
-    }
-  } catch (e) {}
-  
-  // Try FingerprintJS
-  try {
-    if (typeof FingerprintJS !== 'undefined') {
-      const fp = await withTimeout(FingerprintJS.load(), 5000, null);
-      if (fp) {
-        const result = await withTimeout(fp.get(), 5000, null);
-        if (result?.visitorId) {
-          saveFingerprint(result.visitorId);
-          state.deviceInfo.fingerprint = result.visitorId;
-          return result.visitorId;
-        }
-      }
-    }
-  } catch (error) {
-    console.warn('FingerprintJS failed, using fallback');
-  }
-  
-  // Enhanced fallback (Issue #6)
-  return createEnhancedFallbackFingerprint();
-}
-
-/**
- * Create enhanced fallback fingerprint with more entropy (Issue #6)
- */
-function createEnhancedFallbackFingerprint() {
-  // Check for saved fingerprint
-  try {
-    const savedFingerprint = localStorage.getItem(FINGERPRINT_STORAGE_KEY);
-    if (savedFingerprint && savedFingerprint.length >= 16) {
-      state.deviceInfo.fingerprint = savedFingerprint;
-      return savedFingerprint;
-    }
-  } catch (e) {}
-  
-  // Collect device characteristics
-  const components = [
-    navigator.userAgent,
-    navigator.language,
-    navigator.languages?.join(',') || '',
-    screen.width + 'x' + screen.height,
-    screen.colorDepth,
-    screen.pixelDepth,
-    new Date().getTimezoneOffset(),
-    navigator.hardwareConcurrency || 'unknown',
-    navigator.deviceMemory || 'unknown',
-    navigator.platform,
-    navigator.maxTouchPoints || 0,
-    navigator.cookieEnabled,
-    typeof window.indexedDB !== 'undefined',
-    typeof window.localStorage !== 'undefined',
-    typeof window.sessionStorage !== 'undefined',
-    typeof window.WebSocket !== 'undefined',
-    typeof window.Worker !== 'undefined',
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-  ];
-  
-  // Create hash from components
-  let hash = 0;
-  const str = components.join('|||');
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  
-  // Add cryptographically secure random component (Issue #6)
-  const randomPart = generateSecureRandomString(16);
-  
-  // Add timestamp component for uniqueness
-  const timePart = Date.now().toString(36);
-  
-  const fallbackId = 'fp_' + Math.abs(hash).toString(36) + '_' + randomPart + '_' + timePart;
-  
-  saveFingerprint(fallbackId);
-  state.deviceInfo.fingerprint = fallbackId;
-  
-  return fallbackId;
-}
-
-/**
- * Save fingerprint to storage
- */
-function saveFingerprint(fingerprint) {
-  try {
-    localStorage.setItem(FINGERPRINT_STORAGE_KEY, fingerprint);
-  } catch (e) {}
-}
-
-// ============================
-// RECAPTCHA INTEGRATION (Issue #15)
-// ============================
-
-let recaptchaReady = false;
-let recaptchaLoadPromise = null;
-
-/**
- * Load reCAPTCHA script
- */
-function loadRecaptchaScript() {
-  if (!RECAPTCHA_ENABLED) {
-    return Promise.resolve(false);
-  }
-  
-  if (recaptchaLoadPromise) {
-    return recaptchaLoadPromise;
-  }
-  
-  recaptchaLoadPromise = new Promise((resolve) => {
-    // Check if already loaded
-    if (typeof grecaptcha !== 'undefined' && grecaptcha.ready) {
-      recaptchaReady = true;
-      resolve(true);
-      return;
-    }
-    
-    const script = document.createElement('script');
-    script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
-    script.async = true;
-    script.defer = true;
-    
-    script.onload = () => {
-      if (typeof grecaptcha !== 'undefined') {
-        grecaptcha.ready(() => {
-          recaptchaReady = true;
-          resolve(true);
-        });
-      } else {
-        resolve(false);
-      }
-    };
-    
-    script.onerror = () => {
-      console.warn('Failed to load reCAPTCHA');
-      resolve(false);
-    };
-    
-    document.head.appendChild(script);
-  });
-  
-  return recaptchaLoadPromise;
-}
-
-/**
- * Get reCAPTCHA token for an action
- */
-async function getRecaptchaToken(action) {
-  if (!RECAPTCHA_ENABLED || !recaptchaReady) {
-    return null;
-  }
-  
-  try {
-    const token = await grecaptcha.execute(RECAPTCHA_SITE_KEY, { action });
-    return token;
-  } catch (error) {
-    console.warn('Failed to get reCAPTCHA token');
-    return null;
-  }
-}
-
-// ============================
-// TOAST NOTIFICATIONS
-// ============================
-
-/**
- * Show toast message
- */
 function showToast(message, type = 'info') {
-  // Sanitize message
-  const safeMessage = sanitizeText(message);
-  
   if (type === 'error') {
-    // Use alert for errors (more visible)
-    alert(safeMessage);
-  } else if (type === 'info') {
-    const existingToast = document.getElementById('info-toast');
-    if (existingToast) existingToast.remove();
-    
-    const toast = document.createElement('div');
-    toast.id = 'info-toast';
-    toast.style.cssText = `
-      position: fixed;
-      bottom: 100px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #22c55e;
-      color: white;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      z-index: 10000;
-      box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
-      max-width: 90%;
-      text-align: center;
-    `;
-    toast.textContent = safeMessage;
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-      if (toast.parentNode) {
-        toast.style.opacity = '0';
-        toast.style.transition = 'opacity 0.3s';
-        setTimeout(() => toast.remove(), 300);
-      }
-    }, 3000);
+    alert(message);
   }
 }
 
-// ============================
-// SVG ICON CREATORS
-// ============================
-
-function createEnabledBellIcon() {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("width", "18");
-  svg.setAttribute("height", "18");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("fill", "currentColor");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  
-  const path1 = document.createElementNS(ns, "path");
-  path1.setAttribute("d", "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9");
-  const path2 = document.createElementNS(ns, "path");
-  path2.setAttribute("d", "M13.73 21a2 2 0 0 1-3.46 0");
-  
-  svg.appendChild(path1);
-  svg.appendChild(path2);
-  return svg;
+function createActionContainer() {
+  const existingYesBtn = document.getElementById("confirmModalYesButton");
+  if (existingYesBtn && existingYesBtn.parentNode) {
+    const container = document.createElement("div");
+    container.id = "confirmModalActionContainer";
+    container.className = "flex gap-2 flex-1";
+    existingYesBtn.parentNode.replaceChild(container, existingYesBtn);
+    return container;
+  }
+  return confirmModalActionContainer;
 }
 
-function createDisabledBellIcon() {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("width", "18");
-  svg.setAttribute("height", "18");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  
-  const paths = [
-    "M13.73 21a2 2 0 0 1-3 0",
-    "M18.63 13A17.89 17.89 0 0 1 18 8",
-    "M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14",
-    "M18 8a6 6 0 0 0-9.33-5"
-  ];
-  
-  paths.forEach(d => {
-    const path = document.createElementNS(ns, "path");
-    path.setAttribute("d", d);
-    svg.appendChild(path);
+function cleanupAllListeners() {
+  Object.entries(unsubscribers).forEach(([key, unsub]) => {
+    if (typeof unsub === 'function') {
+      try {
+        unsub();
+        unsubscribers[key] = () => {};
+      } catch (e) {}
+    }
   });
-  
-  const line = document.createElementNS(ns, "line");
-  line.setAttribute("x1", "1");
-  line.setAttribute("y1", "1");
-  line.setAttribute("x2", "23");
-  line.setAttribute("y2", "23");
-  svg.appendChild(line);
-  
-  return svg;
 }
 
-function createKebabIcon() {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("fill", "currentColor");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("aria-hidden", "true");
-  
-  const path = document.createElementNS(ns, "path");
-  path.setAttribute("d", "M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z");
-  svg.appendChild(path);
-  
-  return svg;
+function cleanupNonBanListeners() {
+  const banListenerKeys = ['banCheck', 'deviceBanCheck', 'ipBanCheck'];
+  Object.entries(unsubscribers).forEach(([key, unsub]) => {
+    if (banListenerKeys.includes(key)) return;
+    if (typeof unsub === 'function') {
+      try {
+        unsub();
+        unsubscribers[key] = () => {};
+      } catch (e) {}
+    }
+  });
 }
 
-// ============================
-// BAN SCREENS
-// ============================
-
-function hideBanCheckOverlay() {
-  const overlay = document.getElementById('banCheckOverlay');
-  if (overlay) {
-    overlay.classList.add('hidden');
-    setTimeout(() => {
-      overlay.style.display = 'none';
-    }, 300);
+function cleanupSpamTracker() {
+  const now = Date.now();
+  const cutoff = now - SPAM_CONFIG.TIME_WINDOW;
+  spamTracker.messageTimestamps = spamTracker.messageTimestamps.filter(
+    ts => ts > cutoff
+  );
+  if (spamTracker.messageTimestamps.length < SPAM_CONFIG.WARNING_THRESHOLD) {
+    spamTracker.warningShown = false;
   }
+  spamTracker.lastCleanup = now;
 }
 
-function showBannedScreen(reason = 'Access denied') {
+function canSendMessageNow() {
+  const now = Date.now();
+  const timeSinceLastMessage = now - spamTracker.lastMessageTime;
+  if (timeSinceLastMessage < MESSAGE_COOLDOWN) {
+    const waitTime = Math.ceil((MESSAGE_COOLDOWN - timeSinceLastMessage) / 1000);
+    return {
+      allowed: false,
+      waitTime: waitTime,
+      message: `Wait ${waitTime} second${waitTime > 1 ? 's' : ''}...`
+    };
+  }
+  return { allowed: true };
+}
+
+function checkSpamStatus() {
+  const now = Date.now();
+  if (now - spamTracker.lastCleanup > SPAM_CONFIG.CLEANUP_INTERVAL) {
+    cleanupSpamTracker();
+  }
+  const cutoff = now - SPAM_CONFIG.TIME_WINDOW;
+  spamTracker.messageTimestamps = spamTracker.messageTimestamps.filter(
+    ts => ts > cutoff
+  );
+  const messageCount = spamTracker.messageTimestamps.length;
+  if (messageCount >= SPAM_CONFIG.MAX_MESSAGES) {
+    return {
+      allowed: false,
+      reason: 'spam_limit',
+      shouldBan: true
+    };
+  }
+  if (messageCount >= SPAM_CONFIG.WARNING_THRESHOLD && !spamTracker.warningShown) {
+    spamTracker.warningShown = true;
+    const remaining = SPAM_CONFIG.CF_BAN_THRESHOLD - messageCount - 1;
+    return {
+      allowed: true,
+      warning: `⚠️ Slow down! ${remaining > 0 ? remaining : 'NO'} message${remaining !== 1 ? 's' : ''} left before AUTO-BAN!`
+    };
+  }
+  if (messageCount >= SPAM_CONFIG.CF_BAN_THRESHOLD - 2 && messageCount < SPAM_CONFIG.CF_BAN_THRESHOLD) {
+    return {
+      allowed: true,
+      warning: `🚨 FINAL WARNING: Next message may trigger automatic ban!`
+    };
+  }
+  return { allowed: true };
+}
+
+function recordMessage() {
+  spamTracker.messageTimestamps.push(Date.now());
+  spamTracker.lastMessageTime = Date.now();
+}
+
+async function autoBanForSpam() {
+  if (!state.db || !state.currentUserId) return;
+  state.isBanned = true;
+  state.isDeviceBanned = true;
+  showSpamBannedScreen('client');
+  try {
+    const userId = state.currentUserId;
+    const fingerprint = state.deviceInfo?.fingerprint;
+    const ipHash = state.deviceInfo?.ipHash;
+    let actualUsername = '';
+    try {
+      const userDoc = await getDoc(doc(state.db, "users", userId));
+      if (userDoc.exists()) {
+        actualUsername = userDoc.data().username || '';
+      }
+    } catch (e) {}
+    let deviceRegistered = false;
+    let storedIpHash = null;
+    if (fingerprint) {
+      const deviceDocId = `${userId}_${fingerprint}`;
+      const deviceRef = doc(state.db, "user_devices", deviceDocId);
+      try {
+        const deviceSnap = await getDoc(deviceRef);
+        if (deviceSnap.exists()) {
+          deviceRegistered = true;
+          storedIpHash = deviceSnap.data().ipHash || null;
+        } else {
+          await setDoc(deviceRef, {
+            userId: userId,
+            fingerprint: fingerprint,
+            ipHash: ipHash || null,
+            ipAddress: state.deviceInfo?.ipAddress || null,
+            firstSeen: serverTimestamp(),
+            lastSeen: serverTimestamp(),
+            userAgent: state.deviceInfo?.userAgent || null,
+            platform: state.deviceInfo?.platform || null,
+          });
+          deviceRegistered = true;
+          storedIpHash = ipHash;
+        }
+      } catch (e) {}
+    }
+    const batch = writeBatch(state.db);
+    const userRef = doc(state.db, "users", userId);
+    batch.set(userRef, { banned: true }, { merge: true });
+    const banRef = doc(state.db, "banned_users", userId);
+    batch.set(banRef, {
+      bannedBy: "SYSTEM_AUTO_BAN",
+      timestamp: serverTimestamp(),
+      reason: "Automatic ban: Spam detection (Client-side backup)",
+      username: actualUsername
+    });
+    if (fingerprint && deviceRegistered) {
+      const fingerprintBanRef = doc(state.db, "banned_devices", fingerprint);
+      batch.set(fingerprintBanRef, {
+        fingerprint: fingerprint,
+        userId: userId,
+        username: actualUsername,
+        bannedBy: "SYSTEM_AUTO_BAN",
+        timestamp: serverTimestamp(),
+        reason: "Automatic ban: Spam detection",
+        userAgent: state.deviceInfo?.userAgent || null,
+        platform: state.deviceInfo?.platform || null,
+      });
+    }
+    if (ipHash && deviceRegistered && storedIpHash && ipHash === storedIpHash) {
+      const ipBanRef = doc(state.db, "banned_ips", ipHash);
+      batch.set(ipBanRef, {
+        ipHash: ipHash,
+        fingerprint: fingerprint || '',
+        userId: userId,
+        username: actualUsername,
+        bannedBy: "SYSTEM_AUTO_BAN",
+        timestamp: serverTimestamp(),
+        reason: "Automatic ban: Spam detection",
+      });
+    }
+    await batch.commit();
+  } catch (error) {}
+}
+
+function showSpamBannedScreen(source = 'client') {
   const appContainer = document.getElementById('app') || document.body;
-  
   Array.from(appContainer.children).forEach(child => {
     if (child.id !== 'banOverlayScreen') {
       child.style.display = 'none';
     }
   });
-  
   const existingOverlay = document.getElementById('banOverlayScreen');
   if (existingOverlay) existingOverlay.remove();
-  
-  const existingCheck = document.getElementById('banCheckOverlay');
-  if (existingCheck) existingCheck.style.display = 'none';
-  
   const overlay = document.createElement('div');
   overlay.id = 'banOverlayScreen';
   overlay.style.cssText = `
     position: fixed;
     inset: 0;
-    background-color: #0a0a0a;
+    background: linear-gradient(180deg, #0a0a0a 0%, #1a0a0a 100%);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -934,103 +1023,102 @@ function showBannedScreen(reason = 'Access denied') {
     padding: 1.5rem;
     text-align: center;
   `;
-  
   const emoji = document.createElement('div');
   emoji.style.cssText = 'font-size: 4rem; margin-bottom: 0.5rem;';
   emoji.textContent = '🚫';
-  
   const h1 = document.createElement('h1');
   h1.style.cssText = 'font-size: 1.875rem; color: #ef4444; font-weight: bold; margin: 0;';
-  h1.textContent = 'ACCESS DENIED';
-  
+  h1.textContent = 'BANNED FOR SPAMMING';
   const p1 = document.createElement('p');
   p1.style.cssText = 'color: #888; font-size: 0.9rem; margin: 0;';
-  p1.textContent = 'You have been banned from Konvo.';
-  
+  p1.textContent = source === 'cloud'
+    ? 'Our automated system detected message flooding.'
+    : 'You have been banned for sending too many messages.';
   const p2 = document.createElement('p');
-  p2.style.cssText = 'color: #555; font-size: 0.75rem; margin-top: 1rem;';
-  p2.textContent = 'If you believe this is a mistake, please wait for admin review.';
-  
+  p2.style.cssText = 'color: #666; font-size: 0.8rem; margin: 0;';
+  p2.textContent = `Limit: ${SPAM_CONFIG.CF_BAN_THRESHOLD} messages per ${SPAM_CONFIG.TIME_WINDOW / 1000} seconds`;
+  const divider = document.createElement('div');
+  divider.style.cssText = 'width: 60%; height: 1px; background: #333; margin: 1rem 0;';
+  const p3 = document.createElement('p');
+  p3.style.cssText = 'color: #555; font-size: 0.75rem; margin: 0;';
+  p3.textContent = 'Your device and IP have been recorded.';
+  const p4 = document.createElement('p');
+  p4.style.cssText = 'color: #444; font-size: 0.7rem; margin-top: 0.5rem;';
+  p4.textContent = 'Contact an admin if you believe this was a mistake.';
   overlay.appendChild(emoji);
   overlay.appendChild(h1);
   overlay.appendChild(p1);
   overlay.appendChild(p2);
-  
+  overlay.appendChild(divider);
+  overlay.appendChild(p3);
+  overlay.appendChild(p4);
   document.body.appendChild(overlay);
-  document.body.classList.add('device-banned');
 }
 
-function showUnbannedScreen() {
-  const banOverlay = document.getElementById('banOverlayScreen');
-  if (banOverlay) banOverlay.remove();
-  
-  const overlay = document.createElement('div');
-  overlay.id = 'unbanOverlayScreen';
-  overlay.style.cssText = `
+function showSpamWarning(message) {
+  const existingToast = document.getElementById('spam-warning-toast');
+  if (existingToast) {
+    existingToast.remove();
+  }
+  const toast = document.createElement('div');
+  toast.id = 'spam-warning-toast';
+  toast.style.cssText = `
     position: fixed;
-    inset: 0;
-    background-color: #0a0a0a;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 99999;
-    gap: 1rem;
-  `;
-  
-  const h1 = document.createElement('h1');
-  h1.style.cssText = 'font-size: 1.875rem; color: #22c55e; font-weight: bold;';
-  h1.textContent = '✅ ACCESS RESTORED';
-  
-  const p = document.createElement('p');
-  p.style.cssText = 'color: #888; font-size: 0.875rem; text-align: center; max-width: 300px;';
-  p.textContent = 'Your ban has been lifted. Click below to continue using Konvo.';
-  
-  const btn = document.createElement('button');
-  btn.style.cssText = `
-    margin-top: 1.5rem;
-    padding: 0.75rem 2rem;
-    background-color: #22c55e;
-    color: #000;
-    border: none;
-    border-radius: 8px;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+    color: white;
+    padding: 14px 28px;
+    border-radius: 12px;
     font-weight: bold;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: transform 0.2s, background-color 0.2s;
+    font-size: 14px;
+    z-index: 10000;
+    box-shadow: 0 4px 25px rgba(238, 90, 90, 0.5);
+    animation: slideDown 0.3s ease-out, pulse 1s ease-in-out infinite;
+    text-align: center;
+    max-width: 90%;
+    border: 2px solid rgba(255,255,255,0.3);
   `;
-  btn.textContent = 'CONTINUE';
-  btn.onmouseover = () => btn.style.backgroundColor = '#16a34a';
-  btn.onmouseout = () => btn.style.backgroundColor = '#22c55e';
-  btn.onclick = () => window.location.reload();
-  
-  overlay.appendChild(h1);
-  overlay.appendChild(p);
-  overlay.appendChild(btn);
-  
-  document.body.appendChild(overlay);
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  if (!document.getElementById('spam-warning-styles')) {
+    const style = document.createElement('style');
+    style.id = 'spam-warning-styles';
+    style.textContent = `
+      @keyframes slideDown {
+        from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+      }
+      @keyframes pulse {
+        0%, 100% { box-shadow: 0 4px 25px rgba(238, 90, 90, 0.5); }
+        50% { box-shadow: 0 4px 35px rgba(238, 90, 90, 0.8); }
+      }
+      @keyframes fadeOut {
+        to { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.style.animation = 'fadeOut 0.3s ease-out forwards';
+      setTimeout(() => toast.remove(), 300);
+    }
+  }, 4000);
 }
-
-// ============================
-// CHARACTER COUNTER
-// ============================
 
 function updateCharacterCounter(input, counter) {
   if (!input || !counter) return;
-  
   const currentLength = input.value.length;
   const maxLength = MESSAGE_MAX_LENGTH;
-  
   counter.textContent = `${currentLength}/${maxLength}`;
-  
   if (currentLength > 0) {
     counter.classList.add('visible');
   } else {
     counter.classList.remove('visible');
   }
-  
   counter.classList.remove('warning', 'danger', 'limit');
-  
   if (currentLength >= maxLength) {
     counter.classList.add('limit');
   } else if (currentLength >= maxLength * 0.95) {
@@ -1039,162 +1127,6 @@ function updateCharacterCounter(input, counter) {
     counter.classList.add('warning');
   }
 }
-
-// ============================
-// FIREBASE INITIALIZATION
-// ============================
-
-async function initFirebase() {
-  const globalTimeout = setTimeout(() => {
-    hideBanCheckOverlay();
-  }, 15000);
-  
-  try {
-    // Generate fingerprint first
-    state.deviceInfo.fingerprint = await generateDeviceFingerprint();
-    state.deviceInfo.isIdentified = !!state.deviceInfo.fingerprint;
-    
-    // Load reCAPTCHA (Issue #15)
-    if (RECAPTCHA_ENABLED) {
-      loadRecaptchaScript().catch(() => {});
-    }
-    
-    // Initialize Firebase
-    state.app = initializeApp(firebaseConfig);
-    
-    // Initialize Firestore with persistence
-    try {
-      state.db = initializeFirestore(state.app, {
-        localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager()
-        })
-      });
-    } catch (persistenceError) {
-      state.db = initializeFirestore(state.app, {});
-    }
-    
-    state.auth = getAuth(state.app);
-    state.functions = getFunctions(state.app, 'asia-south1');
-    
-    // Connect to emulators in development
-    if (USE_EMULATORS) {
-      connectFirestoreEmulator(state.db, 'localhost', 8080);
-      connectFunctionsEmulator(state.functions, 'localhost', 5001);
-    }
-    
-    // Initialize Cloud Function references
-    state.cloudFunctions = {
-      sendMessage: httpsCallable(state.functions, 'sendMessage'),
-      registerDevice: httpsCallable(state.functions, 'registerDevice'),
-      updateReaction: httpsCallable(state.functions, 'updateReaction'),
-      updateTypingStatus: httpsCallable(state.functions, 'updateTypingStatus'),
-      updateProfile: httpsCallable(state.functions, 'updateProfile'),
-      checkBanStatus: httpsCallable(state.functions, 'checkBanStatus'),
-    };
-    
-    // Set up auth state listener
-    onAuthStateChanged(state.auth, async (user) => {
-      try {
-        await handleAuthStateChange(user);
-      } catch (error) {
-        console.error('Auth state change error');
-        hideBanCheckOverlay();
-      } finally {
-        clearTimeout(globalTimeout);
-      }
-    });
-    
-  } catch (error) {
-    console.error('Firebase initialization failed');
-    setTextSafely(loading, "Error: Could not initialize. Please refresh.");
-    hideBanCheckOverlay();
-    clearTimeout(globalTimeout);
-    throw error;
-  }
-}
-
-async function handleAuthStateChange(user) {
-  if (user) {
-    state.currentUserId = user.uid;
-    
-    // Check ban status via Cloud Function (Issue #4 - server-side IP check)
-    try {
-      const banResult = await withTimeout(
-        state.cloudFunctions.checkBanStatus({
-          fingerprint: state.deviceInfo.fingerprint
-        }),
-        10000,
-        null
-      );
-      
-      if (banResult?.data?.banned) {
-        state.isBanned = true;
-        state.isDeviceBanned = banResult.data.type === 'device' || banResult.data.type === 'ip';
-        showBannedScreen();
-        return;
-      }
-    } catch (error) {
-      console.warn('Ban check failed, continuing');
-    }
-    
-    // Register device via Cloud Function (Issue #4, #11)
-    try {
-      await withTimeout(
-        state.cloudFunctions.registerDevice({
-          fingerprint: state.deviceInfo.fingerprint,
-          userAgent: navigator.userAgent,
-          language: navigator.language,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          screenResolution: `${screen.width}x${screen.height}`,
-          platform: navigator.platform,
-        }),
-        10000,
-        null
-      );
-    } catch (error) {
-      // Non-critical, continue
-      console.warn('Device registration failed');
-    }
-    
-    // Initialize collections
-    state.confessionsCollection = collection(state.db, "confessions");
-    state.chatCollection = collection(state.db, "chat");
-    state.typingStatusCollection = collection(state.db, "typingStatus");
-    
-    // Set up app
-    registerServiceWorker();
-    setupNotificationButton();
-    setupAdminMenu();
-    setupConnectionMonitor();
-    listenForUserProfiles();
-    listenForBanStatus();
-    
-    try {
-      await checkAdminStatus();
-    } catch (e) {}
-    
-    try {
-      await loadUserProfile();
-    } catch (e) {}
-    
-    hideBanCheckOverlay();
-    initScrollObserver();
-    showPage(state.currentPage);
-    state.isInitialized = true;
-    
-  } else {
-    try {
-      await signInAnonymously(state.auth);
-    } catch (e) {
-      setTextSafely(loading, "Error: Could not sign in. Please refresh.");
-      hideBanCheckOverlay();
-    }
-  }
-}
-
-// ============================
-// SERVICE WORKER
-// ============================
 
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
@@ -1211,47 +1143,33 @@ function registerServiceWorker() {
   }
 }
 
-// ============================
-// CONNECTION MONITOR
-// ============================
-
 function setupConnectionMonitor() {
   window.addEventListener('online', () => {
     if (state.isInitialized) {
       showPage(state.currentPage);
     }
   });
-  
   window.addEventListener('offline', () => {
     showToast("You're offline. Messages will sync when connected.", "info");
   });
 }
 
-// ============================
-// NOTIFICATIONS (Issue #22 - Sanitized)
-// ============================
-
 function setupNotificationButton() {
   if (!notificationButton) return;
-  
   notificationButton.addEventListener("click", handleNotificationClick);
-  
   if ("Notification" in window && Notification.permission === "granted") {
     state.notificationsEnabled = true;
   }
-  
   updateNotificationIcon();
 }
 
 async function handleNotificationClick(e) {
   e.preventDefault();
   e.stopPropagation();
-  
   if (!("Notification" in window)) {
     showToast("Notifications not supported in this browser", "error");
     return;
   }
-  
   if (Notification.permission === "granted") {
     state.notificationsEnabled = !state.notificationsEnabled;
     updateNotificationIcon();
@@ -1270,9 +1188,7 @@ async function handleNotificationClick(e) {
 
 function updateNotificationIcon() {
   if (!notificationButton) return;
-  
   notificationButton.innerHTML = '';
-  
   if (state.notificationsEnabled) {
     notificationButton.classList.add("text-yellow-400");
     notificationButton.appendChild(createEnabledBellIcon());
@@ -1284,22 +1200,16 @@ function updateNotificationIcon() {
   }
 }
 
-/**
- * Show notification with sanitized content (Issue #22)
- */
 async function showNotification(title, body) {
   if (!("Notification" in window) || !state.notificationsEnabled) return;
   if (document.visibilityState === 'visible') return;
-  
-  // Sanitize notification content (Issue #22)
-  const safeTitle = sanitizeNotificationText(title, 50);
-  const safeBody = sanitizeNotificationText(body, 100);
-  
+  const safeTitle = typeof title === 'string' ? title.substring(0, 50) : 'New Message';
+  const safeBody = typeof body === 'string' ? body.substring(0, 100) : '';
   try {
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.ready;
       if (reg) {
-        await reg.showNotification(safeTitle || 'New Message', {
+        await reg.showNotification(safeTitle, {
           body: safeBody,
           icon: "icon.jpg",
           badge: "icon.jpg",
@@ -1310,41 +1220,22 @@ async function showNotification(title, body) {
         return;
       }
     }
-    new Notification(safeTitle || 'New Message', { body: safeBody, icon: "icon.jpg" });
+    new Notification(safeTitle, { body: safeBody, icon: "icon.jpg" });
   } catch (e) {}
-}
-
-// ============================
-// ADMIN FEATURES
-// ============================
-
-async function checkAdminStatus() {
-  if (!state.currentUserId || !state.db) return;
-  
-  try {
-    const adminDocRef = doc(state.db, "admins", state.currentUserId);
-    const adminDocSnap = await getDoc(adminDocRef);
-    state.isCurrentUserAdmin = adminDocSnap.exists();
-  } catch (e) {
-    state.isCurrentUserAdmin = false;
-  }
 }
 
 function setupAdminMenu() {
   const ul = contextMenu?.querySelector("ul");
   if (!ul || document.getElementById("menuPin")) return;
-  
   menuPin = document.createElement("li");
   menuPin.id = "menuPin";
   menuPin.setAttribute("role", "menuitem");
   menuPin.setAttribute("tabindex", "-1");
   menuPin.textContent = "Pin Message 📌";
   menuPin.addEventListener("click", togglePinMessage);
-  
   if (menuDelete) {
     ul.insertBefore(menuPin, menuDelete);
   }
-  
   menuBan = document.createElement("li");
   menuBan.id = "menuBan";
   menuBan.className = "text-red-500 hover:text-red-400 font-bold border-t border-[#333] mt-1 pt-1";
@@ -1352,24 +1243,18 @@ function setupAdminMenu() {
   menuBan.setAttribute("tabindex", "-1");
   menuBan.textContent = "Ban User 🚫";
   menuBan.addEventListener("click", toggleBanUser);
-  
   ul.appendChild(menuBan);
 }
 
 async function togglePinMessage() {
   if (!state.currentContextMenuData || !state.db) return;
-  
   const { id, isPinned, text } = state.currentContextMenuData;
   const isCurrentlyPinned = isPinned === "true";
-  
   hideDropdownMenu();
-  
   try {
     const batch = writeBatch(state.db);
-    
     const msgRef = doc(state.db, state.currentPage, id);
     batch.update(msgRef, { isPinned: !isCurrentlyPinned });
-    
     const pinRef = doc(state.db, "pinned_messages", id);
     if (isCurrentlyPinned) {
       batch.delete(pinRef);
@@ -1382,56 +1267,46 @@ async function togglePinMessage() {
         timestamp: serverTimestamp()
       });
     }
-    
     await batch.commit();
   } catch (e) {
-    showToast(ERROR_MESSAGES.GENERIC, "error");
+    showToast("Failed to pin message. Check Admin permissions.", "error");
   }
 }
 
 async function toggleBanUser() {
   if (!state.currentContextMenuData || !state.db) return;
-  
   const { userId, username } = state.currentContextMenuData;
-  
   if (userId === state.currentUserId) {
     showToast("You cannot ban yourself.", "error");
     hideDropdownMenu();
     return;
   }
-  
   hideDropdownMenu();
-  
   let isBanned = false;
   try {
     const banDocRef = doc(state.db, "banned_users", userId);
     const banDocSnap = await getDoc(banDocRef);
     isBanned = banDocSnap.exists();
   } catch (e) {
-    showToast(ERROR_MESSAGES.GENERIC, "error");
+    showToast("Error checking ban status. Please try again.", "error");
     return;
   }
-  
   const action = isBanned ? "UNBAN" : "BAN";
   const safeUsername = sanitizeText(username || 'this user');
   const confirmMessage = isBanned
-    ? `Unban ${safeUsername}?`
-    : `Ban ${safeUsername}? This will also ban their device and IP.`;
-  
+    ? `Unban ${safeUsername}? This will restore their access including their device and IP.`
+    : `Ban ${safeUsername}? This will also ban their device fingerprint and IP address, preventing them from returning even with a new browser.`;
   if (!confirm(confirmMessage)) {
     return;
   }
-  
   try {
     const batch = writeBatch(state.db);
-    
     const userRef = doc(state.db, "users", userId);
     if (isBanned) {
       batch.update(userRef, { banned: false });
     } else {
       batch.set(userRef, { banned: true }, { merge: true });
     }
-    
     const banRef = doc(state.db, "banned_users", userId);
     if (isBanned) {
       batch.delete(banRef);
@@ -1443,25 +1318,26 @@ async function toggleBanUser() {
         username: username?.substring(0, 30) || 'Unknown'
       });
     }
-    
-    // Get user's devices and ban them too
-    if (!isBanned) {
-      const devicesQuery = query(
-        collection(state.db, "user_devices"),
-        where("userId", "==", userId)
-      );
-      
-      const devicesSnapshot = await getDocs(devicesQuery);
-      
-      const processedFingerprints = new Set();
-      const processedIPs = new Set();
-      
-      for (const deviceDoc of devicesSnapshot.docs) {
-        const deviceData = deviceDoc.data();
-        
-        if (deviceData.fingerprint && !processedFingerprints.has(deviceData.fingerprint)) {
-          processedFingerprints.add(deviceData.fingerprint);
-          const fingerprintBanRef = doc(state.db, "banned_devices", deviceData.fingerprint);
+    const devicesQuery = query(
+      collection(state.db, "user_devices"),
+      where("userId", "==", userId)
+    );
+    let devicesSnapshot;
+    try {
+      devicesSnapshot = await getDocs(devicesQuery);
+    } catch (e) {
+      devicesSnapshot = { docs: [] };
+    }
+    const processedFingerprints = new Set();
+    const processedIPs = new Set();
+    for (const deviceDoc of devicesSnapshot.docs) {
+      const deviceData = deviceDoc.data();
+      if (deviceData.fingerprint && !processedFingerprints.has(deviceData.fingerprint)) {
+        processedFingerprints.add(deviceData.fingerprint);
+        const fingerprintBanRef = doc(state.db, "banned_devices", deviceData.fingerprint);
+        if (isBanned) {
+          batch.delete(fingerprintBanRef);
+        } else {
           batch.set(fingerprintBanRef, {
             fingerprint: deviceData.fingerprint,
             userId: userId,
@@ -1469,12 +1345,17 @@ async function toggleBanUser() {
             bannedBy: state.currentUserId,
             timestamp: serverTimestamp(),
             reason: "Admin Action",
+            userAgent: deviceData.userAgent || null,
+            platform: deviceData.platform || null,
           });
         }
-        
-        if (deviceData.ipHash && !processedIPs.has(deviceData.ipHash)) {
-          processedIPs.add(deviceData.ipHash);
-          const ipBanRef = doc(state.db, "banned_ips", deviceData.ipHash);
+      }
+      if (deviceData.ipHash && !processedIPs.has(deviceData.ipHash)) {
+        processedIPs.add(deviceData.ipHash);
+        const ipBanRef = doc(state.db, "banned_ips", deviceData.ipHash);
+        if (isBanned) {
+          batch.delete(ipBanRef);
+        } else {
           batch.set(ipBanRef, {
             ipHash: deviceData.ipHash,
             userId: userId,
@@ -1485,840 +1366,135 @@ async function toggleBanUser() {
           });
         }
       }
-    } else {
-      // Unban - remove device and IP bans
-      const devicesQuery = query(
-        collection(state.db, "user_devices"),
-        where("userId", "==", userId)
-      );
-      
-      const devicesSnapshot = await getDocs(devicesQuery);
-      
-      for (const deviceDoc of devicesSnapshot.docs) {
-        const deviceData = deviceDoc.data();
-        
-        if (deviceData.fingerprint) {
-          const fingerprintBanRef = doc(state.db, "banned_devices", deviceData.fingerprint);
-          batch.delete(fingerprintBanRef);
-        }
-        
-        if (deviceData.ipHash) {
-          const ipBanRef = doc(state.db, "banned_ips", deviceData.ipHash);
-          batch.delete(ipBanRef);
-        }
-      }
     }
-    
     await batch.commit();
-    
     if (state.userProfiles[userId]) {
       state.userProfiles[userId].banned = !isBanned;
     }
-    
-    showToast(isBanned ? 'User unbanned.' : 'User banned.', "info");
+    const devicesCount = processedFingerprints.size;
+    const ipsCount = processedIPs.size;
+    showToast(
+      isBanned
+        ? `✅ User UNBANNED. Removed ${devicesCount} device ban(s) and ${ipsCount} IP ban(s).`
+        : `🚫 User BANNED. Added ${devicesCount} device ban(s) and ${ipsCount} IP ban(s).`,
+      "info"
+    );
   } catch (e) {
-    showToast(ERROR_MESSAGES.GENERIC, "error");
+    showToast(`Failed to ${action.toLowerCase()} user: ${e.message}`, "error");
   }
 }
 
-// ============================
-// USER PROFILE
-// ============================
-
-async function loadUserProfile() {
-  if (!state.db || !state.currentUserId) return;
-  
+async function initFirebase() {
+  const globalTimeout = setTimeout(() => {
+    hideBanCheckOverlay();
+  }, 15000);
   try {
-    const userDoc = await getDoc(doc(state.db, "users", state.currentUserId));
-    
-    if (userDoc.exists()) {
-      const data = userDoc.data();
-      state.userProfiles[state.currentUserId] = data;
-      
-      if (data.banned) {
-        showBannedScreen();
-        throw new Error("User Banned");
-      }
-      
-      state.currentUsername = data.username || "Anonymous";
-      
-      const pfp = data.profilePhotoURL;
-      if (pfp && isValidProfilePhotoURL(pfp)) {
-        state.currentProfilePhotoURL = pfp;
-      } else {
-        state.currentProfilePhotoURL = null;
-      }
+    state.deviceInfo = await initializeDeviceIdentification();
+    state.app = initializeApp(firebaseConfig);
+    try {
+      state.db = initializeFirestore(state.app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        })
+      });
+    } catch (persistenceError) {
+      state.db = initializeFirestore(state.app, {});
     }
-    
-    if (modalUsernameInput) {
-      modalUsernameInput.value = state.currentUsername === "Anonymous"
-        ? ""
-        : state.currentUsername;
-    }
+    state.auth = getAuth(state.app);
+    onAuthStateChanged(state.auth, async (user) => {
+      try {
+        await handleAuthStateChange(user);
+      } catch (error) {
+        hideBanCheckOverlay();
+      } finally {
+        clearTimeout(globalTimeout);
+      }
+    });
   } catch (error) {
+    setTextSafely(loading, "Error: Could not initialize. Please refresh.");
+    hideBanCheckOverlay();
+    clearTimeout(globalTimeout);
     throw error;
   }
 }
 
-/**
- * Handle profile save via Cloud Function (Issue #15, #23)
- */
-async function handleProfileSave() {
-  if (!state.currentUserId) {
-    showToast(ERROR_MESSAGES.AUTH, "error");
-    return;
-  }
-  
-  const inputVal = modalUsernameInput?.value?.trim();
-  
-  if (!inputVal) {
-    showToast("Please enter a username.", "error");
-    return;
-  }
-  
-  if (!isValidUsername(inputVal)) {
-    showToast("Invalid username. Use letters, numbers, underscores, hyphens, and spaces only (1-30 characters).", "error");
-    if (modalUsernameInput) {
-      modalUsernameInput.classList.add("error");
-      setTimeout(() => modalUsernameInput.classList.remove("error"), 500);
-    }
-    return;
-  }
-  
-  const resetButtonState = () => {
-    if (modalSaveButton) {
-      modalSaveButton.textContent = "Save";
-      modalSaveButton.disabled = false;
-      modalSaveButton.classList.remove("loading");
-    }
-    if (modalCloseButton) {
-      modalCloseButton.disabled = false;
-    }
-    if (modalUsernameInput) {
-      modalUsernameInput.disabled = false;
-    }
-  };
-  
-  if (modalSaveButton) {
-    modalSaveButton.textContent = "SAVING...";
-    modalSaveButton.disabled = true;
-    modalSaveButton.classList.add("loading");
-  }
-  if (modalCloseButton) {
-    modalCloseButton.disabled = true;
-  }
-  if (modalUsernameInput) {
-    modalUsernameInput.disabled = true;
-  }
-  
-  try {
-    // Get reCAPTCHA token (Issue #15)
-    const recaptchaToken = await getRecaptchaToken('update_profile');
-    
-    // Use Cloud Function for profile update (Issue #23)
-    const result = await state.cloudFunctions.updateProfile({
-      username: inputVal,
-      recaptchaToken: recaptchaToken,
-    });
-    
-    if (result.data?.success) {
-      state.currentUsername = result.data.username;
-      state.currentProfilePhotoURL = result.data.profilePhotoURL;
-      
-      state.userProfiles[state.currentUserId] = {
-        ...state.userProfiles[state.currentUserId],
-        username: result.data.username,
-        profilePhotoURL: result.data.profilePhotoURL
-      };
-      
-      showToast("Profile saved successfully!", "info");
-      closeProfileModal();
-    } else {
-      throw new Error('Profile update failed');
-    }
-    
-    resetButtonState();
-  } catch (error) {
-    // Generic error message (Issue #20)
-    const message = getGenericErrorMessage(error);
-    
-    // Special case for username taken
-    if (error.code === 'already-exists') {
-      showToast("Username is already taken!", "error");
-    } else {
-      showToast(message, "error");
-    }
-    
-    resetButtonState();
-  }
-}
-
-function openProfileModal() {
-  if (!modalUsernameInput || !profileModal) return;
-  
-  modalUsernameInput.value = state.currentUsername === "Anonymous"
-    ? ""
-    : state.currentUsername;
-  
-  profileModal.classList.add("is-open");
-  profileModal.setAttribute("aria-hidden", "false");
-  
-  setTimeout(() => modalUsernameInput.focus(), 100);
-}
-
-function closeProfileModal() {
-  if (!profileModal) return;
-  profileModal.classList.remove("is-open");
-  profileModal.setAttribute("aria-hidden", "true");
-}
-
-// ============================
-// MESSAGE EDITING
-// ============================
-
-function showEditModal(docId, collectionName, currentText) {
-  if (!editModal || !modalEditTextArea) return;
-  
-  state.docToEditId = docId;
-  state.collectionToEdit = collectionName;
-  modalEditTextArea.value = currentText || '';
-  
-  editModal.classList.add("is-open");
-  editModal.setAttribute("aria-hidden", "false");
-  
-  setTimeout(() => {
-    modalEditTextArea.focus();
-    modalEditTextArea.setSelectionRange(
-      modalEditTextArea.value.length,
-      modalEditTextArea.value.length
-    );
-  }, 100);
-}
-
-function closeEditModal() {
-  if (!editModal) return;
-  editModal.classList.remove("is-open");
-  editModal.setAttribute("aria-hidden", "true");
-  state.docToEditId = null;
-  state.collectionToEdit = null;
-}
-
-async function saveEdit() {
-  const newText = modalEditTextArea?.value?.trim();
-  
-  if (!isValidMessageText(newText)) {
-    showToast(`Message must be 1-${MESSAGE_MAX_LENGTH} characters.`, "error");
-    return;
-  }
-  
-  if (!state.docToEditId || !state.db) return;
-  
-  if (editModalSaveButton) {
-    editModalSaveButton.textContent = "SAVING...";
-    editModalSaveButton.disabled = true;
-    editModalSaveButton.classList.add("loading");
-  }
-  if (editModalCancelButton) {
-    editModalCancelButton.disabled = true;
-  }
-  
-  try {
-    await updateDoc(doc(state.db, state.collectionToEdit, state.docToEditId), {
-      text: newText,
-      edited: true
-    });
-    closeEditModal();
-  } catch (e) {
-    showToast(ERROR_MESSAGES.GENERIC, "error");
-  } finally {
-    if (editModalSaveButton) {
-      editModalSaveButton.textContent = "SAVE";
-      editModalSaveButton.disabled = false;
-      editModalSaveButton.classList.remove("loading");
-    }
-    if (editModalCancelButton) {
-      editModalCancelButton.disabled = false;
-    }
-  }
-}
-
-// ============================
-// CONFIRM MODAL
-// ============================
-
-function showConfirmModal(text, isMine, docId) {
-  if (!confirmModal || !confirmModalActionContainer) return;
-  
-  setTextSafely(confirmModalText, text);
-  confirmModalActionContainer.innerHTML = '';
-  
-  const isAdmin = state.isCurrentUserAdmin;
-  
-  if (isMine || isAdmin) {
-    const btnForMe = document.createElement('button');
-    btnForMe.type = 'button';
-    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm border border-white text-white hover:bg-white hover:text-black transition";
-    btnForMe.textContent = "FOR ME";
-    btnForMe.onclick = async () => {
-      closeConfirmModal();
-      try {
-        await updateDoc(doc(state.db, state.currentPage, docId), {
-          hiddenFor: arrayUnion(state.currentUserId)
-        });
-      } catch (e) {}
-    };
-    
-    const btnEveryone = document.createElement('button');
-    btnEveryone.type = 'button';
-    btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600 transition";
-    btnEveryone.textContent = isAdmin && !isMine ? "NUKE (ADMIN)" : "EVERYONE";
-    btnEveryone.onclick = async () => {
-      closeConfirmModal();
-      try {
-        await deleteDoc(doc(state.db, state.currentPage, docId));
-      } catch (e) {
-        showToast(ERROR_MESSAGES.GENERIC, "error");
+async function handleAuthStateChange(user) {
+  if (user) {
+    state.currentUserId = user.uid;
+    try {
+      await registerDevice(state.db, state.currentUserId, state.deviceInfo);
+    } catch (regError) {}
+    try {
+      const deviceBanCheck = await withTimeout(
+        checkDeviceBan(state.db, state.deviceInfo),
+        5000,
+        { isBanned: false, reason: null }
+      );
+      if (deviceBanCheck.isBanned) {
+        state.isDeviceBanned = true;
+        showDeviceBannedScreen(deviceBanCheck.reason);
+        return;
       }
-    };
-    
-    confirmModalActionContainer.appendChild(btnForMe);
-    confirmModalActionContainer.appendChild(btnEveryone);
+    } catch (banCheckError) {}
+    state.confessionsCollection = collection(state.db, "confessions");
+    state.chatCollection = collection(state.db, "chat");
+    state.typingStatusCollection = collection(state.db, "typingStatus");
+    registerServiceWorker();
+    setupNotificationButton();
+    setupAdminMenu();
+    setupConnectionMonitor();
+    listenForUserProfiles();
+    listenForBanStatus();
+    listenForDeviceBans();
+    try {
+      await checkAdminStatus();
+    } catch (e) {}
+    try {
+      await loadUserProfile();
+    } catch (e) {}
+    hideBanCheckOverlay();
+    initScrollObserver();
+    showPage(state.currentPage);
+    state.isInitialized = true;
   } else {
-    const btnForMe = document.createElement('button');
-    btnForMe.type = 'button';
-    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 transition";
-    btnForMe.textContent = "HIDE";
-    btnForMe.onclick = async () => {
-      closeConfirmModal();
-      try {
-        await updateDoc(doc(state.db, state.currentPage, docId), {
-          hiddenFor: arrayUnion(state.currentUserId)
-        });
-      } catch (e) {}
-    };
-    confirmModalActionContainer.appendChild(btnForMe);
-  }
-  
-  confirmModal.classList.add("is-open");
-  confirmModal.setAttribute("aria-hidden", "false");
-}
-
-function closeConfirmModal() {
-  if (!confirmModal) return;
-  confirmModal.classList.remove("is-open");
-  confirmModal.setAttribute("aria-hidden", "true");
-}
-
-// ============================
-// REACTIONS (Via Cloud Function - Issue #8)
-// ============================
-
-/**
- * Toggle reaction via Cloud Function (Issue #8)
- */
-async function toggleReaction(docId, collectionName, reactionType, hasReacted) {
-  if (!state.currentUserId) return;
-  
-  if (!Object.prototype.hasOwnProperty.call(REACTION_TYPES, reactionType)) {
-    return;
-  }
-  
-  // Client-side rate limit check (backup)
-  const now = Date.now();
-  if (now - state.lastReactionTime < CLIENT_RATE_LIMITS.REACTION_COOLDOWN_MS) {
-    return; // Silently ignore
-  }
-  
-  // Optimistic UI update
-  const escapedId = escapeSelector(docId);
-  const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
-  if (bubble) {
-    updateReactionUI(bubble, reactionType, !hasReacted, collectionName);
-  }
-  
-  state.lastReactionTime = now;
-  
-  try {
-    // Use Cloud Function for reaction (Issue #8)
-    await state.cloudFunctions.updateReaction({
-      messageId: docId,
-      collection: collectionName,
-      reactionType: reactionType,
-      action: hasReacted ? 'remove' : 'add'
-    });
-  } catch (error) {
-    // Revert optimistic update on failure
-    if (bubble) {
-      updateReactionUI(bubble, reactionType, hasReacted, collectionName);
-    }
-    
-    if (error.code === 'resource-exhausted') {
-      // Don't show error for rate limit
-    } else {
-      console.warn('Reaction update failed');
+    try {
+      await signInAnonymously(state.auth);
+    } catch (e) {
+      setTextSafely(loading, "Error: Could not sign in. Please refresh.");
+      hideBanCheckOverlay();
     }
   }
 }
 
-function updateReactionUI(bubble, reactionType, isAdding, collectionName) {
-  if (!bubble) return;
-  
-  let chipsContainer = bubble.querySelector('.reaction-chips-container');
-  if (!chipsContainer) {
-    chipsContainer = document.createElement('div');
-    chipsContainer.className = 'reaction-chips-container';
-    bubble.appendChild(chipsContainer);
-  }
-  
-  let existingChip = null;
-  chipsContainer.querySelectorAll('.reaction-chip').forEach(chip => {
-    const emoji = chip.querySelector('span')?.textContent;
-    if (emoji === REACTION_TYPES[reactionType]) {
-      existingChip = chip;
-    }
-  });
-  
-  if (isAdding) {
-    if (existingChip) {
-      const countSpan = existingChip.querySelectorAll('span')[1];
-      if (countSpan) {
-        const currentCount = parseInt(countSpan.textContent.trim()) || 0;
-        countSpan.textContent = ` ${currentCount + 1}`;
-      }
-      existingChip.classList.add('user-reacted');
-    } else {
-      const chip = document.createElement('div');
-      chip.className = 'reaction-chip user-reacted';
-      chip.style.animation = 'modalZoom 0.2s ease-out';
-      
-      const emojiSpan = document.createElement('span');
-      emojiSpan.textContent = REACTION_TYPES[reactionType];
-      
-      const countSpan = document.createElement('span');
-      countSpan.textContent = ' 1';
-      
-      chip.appendChild(emojiSpan);
-      chip.appendChild(countSpan);
-      
-      chip.onclick = (e) => {
-        e.stopPropagation();
-        toggleReaction(bubble.dataset.id, collectionName, reactionType, true);
-      };
-      
-      chipsContainer.appendChild(chip);
-    }
-    bubble.classList.add('has-reactions');
-  } else {
-    if (existingChip) {
-      const countSpan = existingChip.querySelectorAll('span')[1];
-      if (countSpan) {
-        const currentCount = parseInt(countSpan.textContent.trim()) || 0;
-        if (currentCount <= 1) {
-          existingChip.remove();
-          if (chipsContainer.children.length === 0) {
-            chipsContainer.remove();
-            bubble.classList.remove('has-reactions');
-          }
-        } else {
-          countSpan.textContent = ` ${currentCount - 1}`;
-          existingChip.classList.remove('user-reacted');
-        }
-      }
-    }
-  }
-}
-
-// ============================
-// CONTEXT MENU
-// ============================
-
-function showDropdownMenu(event, data) {
-  event.stopPropagation();
-  
-  if (!contextMenu) return;
-  
-  if (contextMenu.classList.contains("is-open") &&
-      state.currentContextMenuData?.id === data.id) {
-    hideDropdownMenu();
-    return;
-  }
-  
-  state.currentContextMenuData = { ...data };
-  
-  const now = Date.now();
-  const messageTime = parseInt(data.timestamp, 10);
-  const isRecent = isNaN(messageTime) ? true : (now - messageTime < 900000);
-  const isMine = data.isMine === "true";
-  const isAdmin = state.isCurrentUserAdmin;
-  
-  if (menuEdit) {
-    menuEdit.style.display = isRecent && isMine ? "block" : "none";
-  }
-  if (menuDelete) {
-    menuDelete.style.display = "block";
-  }
-  if (menuPin) {
-    menuPin.style.display = isAdmin ? "block" : "none";
-    menuPin.textContent = data.isPinned === "true"
-      ? "Unpin Message"
-      : "Pin Message 📌";
-  }
-  if (menuBan) {
-    menuBan.style.display = (isAdmin && !isMine) ? "block" : "none";
-  }
-  
-  const rect = event.currentTarget.getBoundingClientRect();
-  const menuWidth = 150;
-  let left = isMine ? rect.right - menuWidth : rect.left;
-  
-  if (left < 10) left = 10;
-  if (left + menuWidth > window.innerWidth - 10) {
-    left = window.innerWidth - menuWidth - 10;
-  }
-  
-  contextMenu.style.top = `${rect.bottom + 2}px`;
-  contextMenu.style.left = `${left}px`;
-  contextMenu.classList.add("is-open");
-}
-
-function hideDropdownMenu() {
-  if (contextMenu) {
-    contextMenu.classList.remove("is-open");
-  }
-}
-
-// ============================
-// SELECTION MODE
-// ============================
-
-function handleMessageClick(bubble) {
-  if (!state.isSelectionMode) return;
-  
-  const docId = bubble.dataset.id;
-  
-  if (state.selectedMessages.has(docId)) {
-    state.selectedMessages.delete(docId);
-    bubble.classList.remove("selected-message");
-  } else {
-    state.selectedMessages.add(docId);
-    bubble.classList.add("selected-message");
-  }
-  
-  updateSelectionBar();
-}
-
-function enterSelectionMode() {
-  state.isSelectionMode = true;
-  document.body.classList.add("selection-mode");
-  
-  if (selectionBar) {
-    selectionBar.classList.remove("hidden");
-    selectionBar.style.display = "flex";
-  }
-  if (chatForm) chatForm.classList.add("hidden");
-  if (confessionForm) confessionForm.classList.add("hidden");
-  
-  if (state.currentContextMenuData) {
-    const docId = state.currentContextMenuData.id;
-    state.selectedMessages.add(docId);
-    const escapedId = escapeSelector(docId);
-    const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
-    if (bubble) {
-      bubble.classList.add("selected-message");
-    }
-  }
-  
-  updateSelectionBar();
-}
-
-function exitSelectionMode() {
-  state.isSelectionMode = false;
-  document.body.classList.remove("selection-mode");
-  
-  if (selectionBar) {
-    selectionBar.classList.add("hidden");
-  }
-  
-  state.selectedMessages.clear();
-  
-  if (state.currentPage === "chat") {
-    if (chatForm) {
-      chatForm.classList.remove("hidden");
-      chatForm.classList.add("flex");
-    }
-  } else {
-    if (confessionForm) {
-      confessionForm.classList.remove("hidden");
-      confessionForm.classList.add("flex");
-    }
-  }
-  
-  document.querySelectorAll(".selected-message").forEach(el => {
-    el.classList.remove("selected-message");
-  });
-}
-
-function updateSelectionBar() {
-  const count = state.selectedMessages.size;
-  setTextSafely(selectionCount, `${count} selected`);
-  
-  if (count === 0 && state.isSelectionMode) {
-    exitSelectionMode();
-  }
-}
-
-async function handleMultiDelete() {
-  const count = state.selectedMessages.size;
-  if (count === 0) return;
-  
-  let allMine = true;
-  state.selectedMessages.forEach(id => {
-    const escapedId = escapeSelector(id);
-    const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
-    if (bubble && bubble.dataset.isMine !== "true") {
-      allMine = false;
-    }
-  });
-  
-  const isAdmin = state.isCurrentUserAdmin;
-  const canDeleteEveryone = isAdmin || allMine;
-  
-  setTextSafely(confirmModalText, `Delete ${count} message${count > 1 ? 's' : ''}?`);
-  
-  if (confirmModalActionContainer) {
-    confirmModalActionContainer.innerHTML = '';
-    
-    const btnForMe = document.createElement('button');
-    btnForMe.type = 'button';
-    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm border border-white text-white hover:bg-white hover:text-black transition";
-    btnForMe.textContent = "FOR ME";
-    btnForMe.onclick = async () => {
-      closeConfirmModal();
-      const batch = writeBatch(state.db);
-      state.selectedMessages.forEach((docId) => {
-        const docRef = doc(state.db, state.currentPage, docId);
-        batch.update(docRef, { hiddenFor: arrayUnion(state.currentUserId) });
-      });
-      try {
-        await batch.commit();
-      } catch (e) {
-        showToast(ERROR_MESSAGES.GENERIC, "error");
-      }
-      exitSelectionMode();
-    };
-    
-    confirmModalActionContainer.appendChild(btnForMe);
-    
-    if (canDeleteEveryone) {
-      const btnEveryone = document.createElement('button');
-      btnEveryone.type = 'button';
-      btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600 transition";
-      btnEveryone.textContent = "EVERYONE";
-      btnEveryone.onclick = async () => {
-        closeConfirmModal();
-        const batch = writeBatch(state.db);
-        state.selectedMessages.forEach((docId) => {
-          const docRef = doc(state.db, state.currentPage, docId);
-          batch.delete(docRef);
-        });
-        try {
-          await batch.commit();
-        } catch (e) {
-          showToast(ERROR_MESSAGES.GENERIC, "error");
-        }
-        exitSelectionMode();
-      };
-      confirmModalActionContainer.appendChild(btnEveryone);
-    }
-  }
-  
-  if (confirmModal) {
-    confirmModal.classList.add("is-open");
-    confirmModal.setAttribute("aria-hidden", "false");
-  }
-}
-
-// ============================
-// PAGE NAVIGATION
-// ============================
-
-function showPage(page) {
-  if (page !== 'chat' && page !== 'confessions') {
-    page = 'chat';
-  }
-  
-  state.currentPage = page;
-  
-  if (state.isSelectionMode) exitSelectionMode();
-  cancelReplyMode();
-  
-  document.querySelectorAll(".reaction-picker").forEach(p => p.remove());
-  
-  // Cleanup existing listeners
-  if (typeof unsubscribers.confessions === 'function') {
-    unsubscribers.confessions();
-    unsubscribers.confessions = () => {};
-  }
-  if (typeof unsubscribers.chat === 'function') {
-    unsubscribers.chat();
-    unsubscribers.chat = () => {};
-  }
-  if (typeof unsubscribers.typingStatus === 'function') {
-    unsubscribers.typingStatus();
-    unsubscribers.typingStatus = () => {};
-  }
-  
-  if (typingIndicator) typingIndicator.innerHTML = "&nbsp;";
-  
-  state.unreadMessages = 0;
-  if (newMsgCount) newMsgCount.classList.add("hidden");
-  if (scrollToBottomBtn) {
-    scrollToBottomBtn.classList.add("hidden");
-    scrollToBottomBtn.style.display = "";
-  }
-  
-  listenForPinnedMessages();
-  
-  if (page === "confessions") {
-    navConfessions?.classList.add("active");
-    navConfessions?.setAttribute("aria-pressed", "true");
-    navChat?.classList.remove("active");
-    navChat?.setAttribute("aria-pressed", "false");
-    
-    if (confessionForm) {
-      confessionForm.classList.add("flex");
-      confessionForm.classList.remove("hidden");
-    }
-    if (chatForm) {
-      chatForm.classList.add("hidden");
-      chatForm.classList.remove("flex");
-    }
-    if (typingIndicator) typingIndicator.classList.add("hidden");
-    
-    listenForConfessions();
-  } else {
-    navChat?.classList.add("active");
-    navChat?.setAttribute("aria-pressed", "true");
-    navConfessions?.classList.remove("active");
-    navConfessions?.setAttribute("aria-pressed", "false");
-    
-    if (chatForm) {
-      chatForm.classList.add("flex");
-      chatForm.classList.remove("hidden");
-    }
-    if (confessionForm) {
-      confessionForm.classList.add("hidden");
-      confessionForm.classList.remove("flex");
-    }
-    if (typingIndicator) typingIndicator.classList.remove("hidden");
-    
-    listenForChat();
-    listenForTyping();
-  }
-}
-
-// ============================
-// BAN STATUS LISTENERS
-// ============================
-
-function listenForBanStatus() {
-  if (typeof unsubscribers.banCheck === 'function') {
-    unsubscribers.banCheck();
-    unsubscribers.banCheck = () => {};
-  }
-  
+async function checkAdminStatus() {
   if (!state.currentUserId || !state.db) return;
-  
-  unsubscribers.banCheck = onSnapshot(
-    doc(state.db, "banned_users", state.currentUserId),
-    (docSnap) => {
-      if (docSnap.exists()) {
-        if (!state.isBanned) {
-          state.isBanned = true;
-          cleanupNonBanListeners();
-          showBannedScreen();
-        }
-      } else {
-        if (state.isBanned) {
-          state.isBanned = false;
-          showUnbannedScreen();
-        }
-      }
-    },
-    (error) => {
-      console.warn('Ban check listener error');
-    }
-  );
-  
-  // Listen for device ban
-  if (state.deviceInfo.fingerprint) {
-    unsubscribers.deviceBanCheck = onSnapshot(
-      doc(state.db, "banned_devices", state.deviceInfo.fingerprint),
-      (docSnap) => {
-        if (docSnap.exists()) {
-          if (!state.isDeviceBanned) {
-            state.isDeviceBanned = true;
-            cleanupNonBanListeners();
-            showBannedScreen();
-          }
-        }
-      },
-      (error) => {}
-    );
+  try {
+    const adminDocRef = doc(state.db, "admins", state.currentUserId);
+    const adminDocSnap = await getDoc(adminDocRef);
+    state.isCurrentUserAdmin = adminDocSnap.exists();
+  } catch (e) {
+    state.isCurrentUserAdmin = false;
   }
 }
-
-function cleanupNonBanListeners() {
-  const banListenerKeys = ['banCheck', 'deviceBanCheck', 'ipBanCheck'];
-  
-  Object.entries(unsubscribers).forEach(([key, unsub]) => {
-    if (banListenerKeys.includes(key)) return;
-    if (typeof unsub === 'function') {
-      try {
-        unsub();
-        unsubscribers[key] = () => {};
-      } catch (e) {}
-    }
-  });
-}
-
-function cleanupAllListeners() {
-  Object.entries(unsubscribers).forEach(([key, unsub]) => {
-    if (typeof unsub === 'function') {
-      try {
-        unsub();
-        unsubscribers[key] = () => {};
-      } catch (e) {}
-    }
-  });
-}
-
-// ============================
-// PINNED MESSAGES
-// ============================
 
 function listenForPinnedMessages() {
   if (typeof unsubscribers.pinned === 'function') {
     unsubscribers.pinned();
     unsubscribers.pinned = () => {};
   }
-  
   const q = query(
     collection(state.db, "pinned_messages"),
     orderBy("timestamp", "desc")
   );
-  
   unsubscribers.pinned = onSnapshot(q, (snapshot) => {
     const matchingPin = snapshot.docs.find(doc =>
       doc.data().collection === state.currentPage
     );
-    
     if (matchingPin && pinnedMessageBar && pinnedMessageText) {
       const data = matchingPin.data();
       pinnedMessageBar.classList.remove("hidden");
       pinnedMessageBar.style.display = "flex";
       setTextSafely(pinnedMessageText, data.text);
-      
       pinnedMessageBar.onclick = () => {
         const escapedId = escapeSelector(data.originalId);
         const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
@@ -2341,130 +1517,170 @@ function listenForPinnedMessages() {
   });
 }
 
-// ============================
-// USER PROFILES
-// ============================
-
-function requestUserProfile(userId) {
-  if (!userId || typeof userId !== 'string') return;
-  if (state.userProfiles[userId]) return;
-  if (state.pendingProfileLoads.has(userId)) return;
-  
-  state.pendingProfileLoads.add(userId);
-  
-  if (state.profileLoadTimeout) {
-    clearTimeout(state.profileLoadTimeout);
+function listenForBanStatus() {
+  if (typeof unsubscribers.banCheck === 'function') {
+    unsubscribers.banCheck();
+    unsubscribers.banCheck = () => {};
   }
-  
-  state.profileLoadTimeout = setTimeout(() => {
-    loadPendingProfiles();
-  }, 100);
-}
-
-async function loadPendingProfiles() {
-  if (state.pendingProfileLoads.size === 0) return;
-  if (!state.db) return;
-  
-  const userIds = Array.from(state.pendingProfileLoads);
-  state.pendingProfileLoads.clear();
-  
-  const batchSize = 30;
-  
-  for (let i = 0; i < userIds.length; i += batchSize) {
-    const batch = userIds.slice(i, i + batchSize);
-    
-    try {
-      const q = query(
-        collection(state.db, "users"),
-        where("__name__", "in", batch)
-      );
-      const snapshot = await getDocs(q);
-      
-      snapshot.docs.forEach((docSnap) => {
-        state.userProfiles[docSnap.id] = docSnap.data();
-      });
-    } catch (error) {
-      // Fallback to individual fetches
-      for (const userId of batch) {
-        try {
-          const docRef = doc(state.db, "users", userId);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            state.userProfiles[docSnap.id] = docSnap.data();
+  if (!state.currentUserId || !state.db) return;
+  unsubscribers.banCheck = onSnapshot(
+    doc(state.db, "banned_users", state.currentUserId),
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const banData = docSnap.data();
+        if (!state.isBanned) {
+          state.isBanned = true;
+          state.userProfiles = {};
+          cleanupNonBanListeners();
+          const bannedBy = banData.bannedBy || '';
+          if (bannedBy === 'SYSTEM_CLOUD_FUNCTION' || bannedBy === 'SYSTEM_AUTO_BAN') {
+            const source = bannedBy === 'SYSTEM_CLOUD_FUNCTION' ? 'cloud' : 'client';
+            showSpamBannedScreen(source);
+          } else {
+            showBannedScreen();
           }
-        } catch (e) {}
+        }
+      } else {
+        if (state.isBanned) {
+          state.isBanned = false;
+          showUnbannedScreen();
+        }
       }
-    }
-  }
-  
-  updateDisplayedUsernames();
+    },
+    (error) => {}
+  );
 }
 
-function updateDisplayedUsernames() {
-  document.querySelectorAll('.message-bubble').forEach((bubble) => {
-    const userId = bubble.dataset.userId;
-    if (!userId) return;
-    
-    const profile = state.userProfiles[userId];
-    if (!profile) return;
-    
-    const username = profile.username || "Anonymous";
-    const usernameEl = bubble.querySelector('.font-bold.text-sm.opacity-90');
-    if (usernameEl && usernameEl.textContent !== username) {
-      usernameEl.textContent = username;
-    }
-    
-    const imgEl = bubble.querySelector('.chat-pfp');
-    if (imgEl && profile.profilePhotoURL) {
-      const currentSrc = imgEl.getAttribute('src');
-      if (currentSrc !== profile.profilePhotoURL && isValidProfilePhotoURL(profile.profilePhotoURL)) {
-        imgEl.src = profile.profilePhotoURL;
+function listenForDeviceBans() {
+  if (typeof unsubscribers.deviceBanCheck === 'function') {
+    unsubscribers.deviceBanCheck();
+    unsubscribers.deviceBanCheck = () => {};
+  }
+  if (typeof unsubscribers.ipBanCheck === 'function') {
+    unsubscribers.ipBanCheck();
+    unsubscribers.ipBanCheck = () => {};
+  }
+  if (!state.db || !state.deviceInfo?.fingerprint) return;
+  unsubscribers.deviceBanCheck = onSnapshot(
+    doc(state.db, "banned_devices", state.deviceInfo.fingerprint),
+    (docSnap) => {
+      if (docSnap.exists()) {
+        if (!state.isDeviceBanned) {
+          state.isDeviceBanned = true;
+          cleanupNonBanListeners();
+          showDeviceBannedScreen('Device fingerprint banned');
+        }
+      } else {
+        if (state.isDeviceBanned) {
+          checkFullUnbanStatus();
+        }
       }
+    },
+    (error) => {}
+  );
+  if (state.deviceInfo.ipHash) {
+    unsubscribers.ipBanCheck = onSnapshot(
+      doc(state.db, "banned_ips", state.deviceInfo.ipHash),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          if (!state.isDeviceBanned) {
+            state.isDeviceBanned = true;
+            cleanupNonBanListeners();
+            showDeviceBannedScreen('IP address banned');
+          }
+        } else {
+          if (state.isDeviceBanned) {
+            checkFullUnbanStatus();
+          }
+        }
+      },
+      (error) => {}
+    );
+  }
+}
+
+function showUnbannedScreen() {
+  const banOverlay = document.getElementById('banOverlayScreen');
+  if (banOverlay) banOverlay.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'unbanOverlayScreen';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    background-color: #0a0a0a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+    gap: 1rem;
+  `;
+  const h1 = document.createElement('h1');
+  h1.style.cssText = 'font-size: 1.875rem; color: #22c55e; font-weight: bold;';
+  h1.textContent = '✅ ACCESS RESTORED';
+  const p = document.createElement('p');
+  p.style.cssText = 'color: #888; font-size: 0.875rem; text-align: center; max-width: 300px;';
+  p.textContent = 'Your ban has been lifted. Click below to continue using Konvo.';
+  const btn = document.createElement('button');
+  btn.style.cssText = `
+    margin-top: 1.5rem;
+    padding: 0.75rem 2rem;
+    background-color: #22c55e;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: transform 0.2s, background-color 0.2s;
+  `;
+  btn.textContent = 'CONTINUE';
+  btn.onmouseover = () => btn.style.backgroundColor = '#16a34a';
+  btn.onmouseout = () => btn.style.backgroundColor = '#22c55e';
+  btn.onclick = () => window.location.reload();
+  overlay.appendChild(h1);
+  overlay.appendChild(p);
+  overlay.appendChild(btn);
+  document.body.appendChild(overlay);
+}
+
+function showBannedScreen() {
+  const appContainer = document.getElementById('app') || document.body;
+  Array.from(appContainer.children).forEach(child => {
+    if (child.id !== 'banOverlayScreen') {
+      child.style.display = 'none';
     }
   });
+  const existingOverlay = document.getElementById('banOverlayScreen');
+  if (existingOverlay) existingOverlay.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'banOverlayScreen';
+  overlay.className = 'banned-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    background-color: #0a0a0a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+    gap: 1rem;
+  `;
+  const h1 = document.createElement('h1');
+  h1.style.cssText = 'font-size: 1.875rem; color: #ef4444; font-weight: bold;';
+  h1.textContent = '🚫 ACCESS DENIED';
+  const p = document.createElement('p');
+  p.style.cssText = 'color: #888; font-size: 0.875rem;';
+  p.textContent = 'You have been banned from Konvo.';
+  const p2 = document.createElement('p');
+  p2.style.cssText = 'color: #555; font-size: 0.75rem; margin-top: 1rem;';
+  p2.textContent = 'If you believe this is a mistake, please wait for admin review.';
+  overlay.appendChild(h1);
+  overlay.appendChild(p);
+  overlay.appendChild(p2);
+  document.body.appendChild(overlay);
 }
-
-function listenForUserProfiles() {
-  if (typeof unsubscribers.userProfiles === 'function') {
-    unsubscribers.userProfiles();
-    unsubscribers.userProfiles = () => {};
-  }
-  
-  const checkAndSetupListener = () => {
-    const loadedUserIds = Object.keys(state.userProfiles);
-    if (loadedUserIds.length === 0) {
-      setTimeout(checkAndSetupListener, 2000);
-      return;
-    }
-    
-    const userIdsToWatch = loadedUserIds.slice(0, 30);
-    
-    try {
-      const q = query(
-        collection(state.db, "users"),
-        where("__name__", "in", userIdsToWatch)
-      );
-      
-      unsubscribers.userProfiles = onSnapshot(q,
-        (snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            if (change.type === 'modified' || change.type === 'added') {
-              state.userProfiles[change.doc.id] = change.doc.data();
-            }
-          });
-          updateDisplayedUsernames();
-        },
-        (error) => {}
-      );
-    } catch (e) {}
-  };
-  
-  setTimeout(checkAndSetupListener, 1000);
-}
-
-// ============================
-// SCROLL OBSERVER
-// ============================
 
 function initScrollObserver() {
   const options = {
@@ -2472,20 +1688,17 @@ function initScrollObserver() {
     rootMargin: "100px",
     threshold: 0.1
   };
-  
   state.bottomObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       state.userIsAtBottom = entry.isIntersecting;
       updateScrollButton();
     });
   }, options);
-  
   feedContainer?.addEventListener('scroll', () => {}, { passive: true });
 }
 
 function updateScrollButton() {
   if (!scrollToBottomBtn || !newMsgCount) return;
-  
   if (state.userIsAtBottom) {
     scrollToBottomBtn.classList.add("hidden");
     scrollToBottomBtn.style.display = "";
@@ -2513,59 +1726,812 @@ function scrollToBottom() {
   updateScrollButton();
 }
 
-// ============================
-// TYPING STATUS (Via Cloud Function - Issue #12)
-// ============================
+function requestUserProfile(userId) {
+  if (!userId || typeof userId !== 'string') return;
+  if (state.userProfiles[userId]) return;
+  if (state.pendingProfileLoads.has(userId)) return;
+  state.pendingProfileLoads.add(userId);
+  if (state.profileLoadTimeout) {
+    clearTimeout(state.profileLoadTimeout);
+  }
+  state.profileLoadTimeout = setTimeout(() => {
+    loadPendingProfiles();
+  }, 100);
+}
 
-const updateTypingStatus = debounce(async (isTyping) => {
-  if (!state.currentUserId) return;
-  
-  // Client-side rate limit
-  const now = Date.now();
-  if (now - state.lastTypingTime < CLIENT_RATE_LIMITS.TYPING_COOLDOWN_MS) {
+async function loadPendingProfiles() {
+  if (state.pendingProfileLoads.size === 0) return;
+  if (!state.db) return;
+  const userIds = Array.from(state.pendingProfileLoads);
+  state.pendingProfileLoads.clear();
+  const batchSize = 30;
+  for (let i = 0; i < userIds.length; i += batchSize) {
+    const batch = userIds.slice(i, i + batchSize);
+    try {
+      const q = query(
+        collection(state.db, "users"),
+        where("__name__", "in", batch)
+      );
+      const snapshot = await getDocs(q);
+      snapshot.docs.forEach((docSnap) => {
+        state.userProfiles[docSnap.id] = docSnap.data();
+      });
+    } catch (error) {
+      for (const userId of batch) {
+        try {
+          const docRef = doc(state.db, "users", userId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            state.userProfiles[docSnap.id] = docSnap.data();
+          }
+        } catch (e) {}
+      }
+    }
+  }
+  updateDisplayedUsernames();
+}
+
+function updateDisplayedUsernames() {
+  document.querySelectorAll('.message-bubble').forEach((bubble) => {
+    const userId = bubble.dataset.userId;
+    if (!userId) return;
+    const profile = state.userProfiles[userId];
+    if (!profile) return;
+    const username = profile.username || "Anonymous";
+    const usernameEl = bubble.querySelector('.font-bold.text-sm.opacity-90');
+    if (usernameEl && usernameEl.textContent !== username) {
+      usernameEl.textContent = username;
+    }
+    const imgEl = bubble.querySelector('.chat-pfp');
+    if (imgEl && profile.profilePhotoURL) {
+      const currentSrc = imgEl.getAttribute('src');
+      if (currentSrc !== profile.profilePhotoURL && isValidProfilePhotoURL(profile.profilePhotoURL)) {
+        imgEl.src = profile.profilePhotoURL;
+      }
+    }
+  });
+}
+
+function listenForUserProfiles() {
+  if (typeof unsubscribers.userProfiles === 'function') {
+    unsubscribers.userProfiles();
+    unsubscribers.userProfiles = () => {};
+  }
+  const checkAndSetupListener = () => {
+    const loadedUserIds = Object.keys(state.userProfiles);
+    if (loadedUserIds.length === 0) {
+      setTimeout(checkAndSetupListener, 2000);
+      return;
+    }
+    const userIdsToWatch = loadedUserIds.slice(0, 30);
+    try {
+      const q = query(
+        collection(state.db, "users"),
+        where("__name__", "in", userIdsToWatch)
+      );
+      unsubscribers.userProfiles = onSnapshot(q,
+        (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === 'modified' || change.type === 'added') {
+              state.userProfiles[change.doc.id] = change.doc.data();
+            }
+          });
+          updateDisplayedUsernames();
+        },
+        (error) => {}
+      );
+    } catch (e) {}
+  };
+  setTimeout(checkAndSetupListener, 1000);
+}
+
+async function loadUserProfile() {
+  if (!state.db || !state.currentUserId) return;
+  try {
+    const userDoc = await getDoc(doc(state.db, "users", state.currentUserId));
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      state.userProfiles[state.currentUserId] = data;
+      if (data.banned) {
+        showBannedScreen();
+        throw new Error("User Banned");
+      }
+      state.currentUsername = data.username || "Anonymous";
+      const pfp = data.profilePhotoURL;
+      if (pfp && isValidProfilePhotoURL(pfp)) {
+        state.currentProfilePhotoURL = pfp;
+      } else {
+        state.currentProfilePhotoURL = null;
+      }
+    }
+    if (modalUsernameInput) {
+      modalUsernameInput.value = state.currentUsername === "Anonymous"
+        ? ""
+        : state.currentUsername;
+    }
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function handleProfileSave() {
+  if (!state.db || !state.currentUserId) {
+    showToast("Not connected. Please refresh the page.", "error");
     return;
   }
-  state.lastTypingTime = now;
-  
-  if (state.typingTimeout) {
-    clearTimeout(state.typingTimeout);
-    state.typingTimeout = null;
+  const inputVal = modalUsernameInput?.value?.trim();
+  if (!inputVal) {
+    showToast("Please enter a username.", "error");
+    return;
   }
-  
-  try {
-    // Use Cloud Function for typing status (Issue #12)
-    await state.cloudFunctions.updateTypingStatus({
-      isTyping: isTyping
-    });
-    
-    if (isTyping) {
-      state.typingTimeout = setTimeout(() => {
-        updateTypingStatus(false);
-      }, TYPING_TIMEOUT);
+  if (!isValidUsername(inputVal)) {
+    showToast("Invalid username. Use letters, numbers, underscores, hyphens, and spaces only (1-30 characters).", "error");
+    if (modalUsernameInput) {
+      modalUsernameInput.classList.add("error");
+      setTimeout(() => modalUsernameInput.classList.remove("error"), 500);
     }
-  } catch (e) {
-    // Silently fail for typing updates
+    return;
   }
-}, 300);
+  const resetButtonState = () => {
+    if (modalSaveButton) {
+      modalSaveButton.textContent = "Save";
+      modalSaveButton.disabled = false;
+      modalSaveButton.classList.remove("loading");
+    }
+    if (modalCloseButton) {
+      modalCloseButton.disabled = false;
+    }
+    if (modalUsernameInput) {
+      modalUsernameInput.disabled = false;
+    }
+  };
+  if (modalSaveButton) {
+    modalSaveButton.textContent = "CHECKING...";
+    modalSaveButton.disabled = true;
+    modalSaveButton.classList.add("loading");
+  }
+  if (modalCloseButton) {
+    modalCloseButton.disabled = true;
+  }
+  if (modalUsernameInput) {
+    modalUsernameInput.disabled = true;
+  }
+  try {
+    const q = query(
+      collection(state.db, "users"),
+      where("username", "==", inputVal)
+    );
+    const querySnapshot = await withTimeout(
+      getDocs(q),
+      10000,
+      null
+    );
+    if (querySnapshot === null) {
+      showToast("Request timed out. Please try again.", "error");
+      resetButtonState();
+      return;
+    }
+    let isTaken = false;
+    querySnapshot.forEach((docSnapshot) => {
+      if (docSnapshot.id !== state.currentUserId) {
+        isTaken = true;
+      }
+    });
+    if (isTaken) {
+      showToast("Username is already taken!", "error");
+      resetButtonState();
+      return;
+    }
+    if (modalSaveButton) {
+      modalSaveButton.textContent = "SAVING...";
+    }
+    const newProfilePhotoURL = `https://ui-avatars.com/api/?name=${encodeURIComponent(inputVal)}&background=random&size=128`;
+    await withTimeout(
+      setDoc(doc(state.db, "users", state.currentUserId), {
+        username: inputVal,
+        profilePhotoURL: newProfilePhotoURL,
+      }, { merge: true }),
+      10000,
+      null
+    );
+    state.currentUsername = inputVal;
+    state.currentProfilePhotoURL = newProfilePhotoURL;
+    state.userProfiles[state.currentUserId] = {
+      ...state.userProfiles[state.currentUserId],
+      username: inputVal,
+      profilePhotoURL: newProfilePhotoURL
+    };
+    showToast("Profile saved successfully!", "info");
+    closeProfileModal();
+    resetButtonState();
+  } catch (error) {
+    if (error.code === 'permission-denied') {
+      showToast("Permission denied. You may be banned.", "error");
+    } else if (error.code === 'unavailable') {
+      showToast("Server unavailable. Please try again.", "error");
+    } else {
+      showToast("Error saving profile: " + (error.message || "Unknown error"), "error");
+    }
+    resetButtonState();
+  }
+}
+
+function openProfileModal() {
+  if (!modalUsernameInput || !profileModal) return;
+  modalUsernameInput.value = state.currentUsername === "Anonymous"
+    ? ""
+    : state.currentUsername;
+  profileModal.classList.add("is-open");
+  profileModal.setAttribute("aria-hidden", "false");
+  setTimeout(() => modalUsernameInput.focus(), 100);
+}
+
+function closeProfileModal() {
+  if (!profileModal) return;
+  profileModal.classList.remove("is-open");
+  profileModal.setAttribute("aria-hidden", "true");
+}
+
+function showEditModal(docId, collectionName, currentText) {
+  if (!editModal || !modalEditTextArea) return;
+  state.docToEditId = docId;
+  state.collectionToEdit = collectionName;
+  modalEditTextArea.value = currentText || '';
+  editModal.classList.add("is-open");
+  editModal.setAttribute("aria-hidden", "false");
+  setTimeout(() => {
+    modalEditTextArea.focus();
+    modalEditTextArea.setSelectionRange(
+      modalEditTextArea.value.length,
+      modalEditTextArea.value.length
+    );
+  }, 100);
+}
+
+function closeEditModal() {
+  if (!editModal) return;
+  editModal.classList.remove("is-open");
+  editModal.setAttribute("aria-hidden", "true");
+  state.docToEditId = null;
+  state.collectionToEdit = null;
+}
+
+async function saveEdit() {
+  const newText = modalEditTextArea.value.trim();
+  if (!isValidMessageText(newText)) {
+    showToast(`Message must be 1-${MESSAGE_MAX_LENGTH} characters.`, "error");
+    return;
+  }
+  if (!state.docToEditId || !state.db) return;
+  editModalSaveButton.textContent = "SAVING...";
+  editModalSaveButton.disabled = true;
+  editModalCancelButton.disabled = true;
+  editModalSaveButton.classList.add("loading");
+  try {
+    await updateDoc(doc(state.db, state.collectionToEdit, state.docToEditId), {
+      text: newText,
+      edited: true
+    });
+    closeEditModal();
+  } catch (e) {
+    showToast("Error: You can only edit your own messages.", "error");
+  } finally {
+    editModalSaveButton.textContent = "SAVE";
+    editModalSaveButton.disabled = false;
+    editModalCancelButton.disabled = false;
+    editModalSaveButton.classList.remove("loading");
+  }
+}
+
+function showConfirmModal(text, isMine, docId) {
+  if (!confirmModal || !confirmModalActionContainer) return;
+  setTextSafely(confirmModalText, text);
+  confirmModalActionContainer.innerHTML = '';
+  const isAdmin = state.isCurrentUserAdmin;
+  if (isMine || isAdmin) {
+    const btnForMe = document.createElement('button');
+    btnForMe.type = 'button';
+    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm border border-white text-white hover:bg-white hover:text-black transition";
+    btnForMe.textContent = "FOR ME";
+    btnForMe.onclick = async () => {
+      closeConfirmModal();
+      try {
+        await updateDoc(doc(state.db, state.currentPage, docId), {
+          hiddenFor: arrayUnion(state.currentUserId)
+        });
+      } catch (e) {}
+    };
+    const btnEveryone = document.createElement('button');
+    btnEveryone.type = 'button';
+    btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600 transition";
+    btnEveryone.textContent = isAdmin && !isMine ? "NUKE (ADMIN)" : "EVERYONE";
+    btnEveryone.onclick = async () => {
+      closeConfirmModal();
+      try {
+        await deleteDoc(doc(state.db, state.currentPage, docId));
+      } catch (e) {
+        showToast("Permission denied.", "error");
+      }
+    };
+    confirmModalActionContainer.appendChild(btnForMe);
+    confirmModalActionContainer.appendChild(btnEveryone);
+  } else {
+    const btnForMe = document.createElement('button');
+    btnForMe.type = 'button';
+    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 transition";
+    btnForMe.textContent = "HIDE";
+    btnForMe.onclick = async () => {
+      closeConfirmModal();
+      try {
+        await updateDoc(doc(state.db, state.currentPage, docId), {
+          hiddenFor: arrayUnion(state.currentUserId)
+        });
+      } catch (e) {}
+    };
+    confirmModalActionContainer.appendChild(btnForMe);
+  }
+  confirmModal.classList.add("is-open");
+  confirmModal.setAttribute("aria-hidden", "false");
+}
+
+function closeConfirmModal() {
+  if (!confirmModal) return;
+  confirmModal.classList.remove("is-open");
+  confirmModal.setAttribute("aria-hidden", "true");
+}
+
+async function toggleReaction(docId, collectionName, reactionType, hasReacted) {
+  if (!state.db || !state.currentUserId) return;
+  if (!Object.prototype.hasOwnProperty.call(REACTION_TYPES, reactionType)) {
+    return;
+  }
+  const escapedId = escapeSelector(docId);
+  const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
+  if (bubble) {
+    updateReactionUI(bubble, reactionType, !hasReacted, collectionName);
+  }
+  const docRef = doc(state.db, collectionName, docId);
+  try {
+    if (hasReacted) {
+      await updateDoc(docRef, {
+        [`reactions.${reactionType}`]: arrayRemove(state.currentUserId)
+      });
+    } else {
+      await updateDoc(docRef, {
+        [`reactions.${reactionType}`]: arrayUnion(state.currentUserId)
+      });
+    }
+  } catch (error) {
+    if (bubble) {
+      updateReactionUI(bubble, reactionType, hasReacted, collectionName);
+    }
+    if (error.code === 'permission-denied') {
+      showToast("Unable to add reaction.", "error");
+    }
+  }
+}
+
+function updateReactionUI(bubble, reactionType, isAdding, collectionName) {
+  if (!bubble) return;
+  let chipsContainer = bubble.querySelector('.reaction-chips-container');
+  if (!chipsContainer) {
+    chipsContainer = document.createElement('div');
+    chipsContainer.className = 'reaction-chips-container';
+    bubble.appendChild(chipsContainer);
+  }
+  let existingChip = null;
+  chipsContainer.querySelectorAll('.reaction-chip').forEach(chip => {
+    const emoji = chip.querySelector('span')?.textContent;
+    if (emoji === REACTION_TYPES[reactionType]) {
+      existingChip = chip;
+    }
+  });
+  if (isAdding) {
+    if (existingChip) {
+      const countSpan = existingChip.querySelectorAll('span')[1];
+      if (countSpan) {
+        const currentCount = parseInt(countSpan.textContent.trim()) || 0;
+        countSpan.textContent = ` ${currentCount + 1}`;
+      }
+      existingChip.classList.add('user-reacted');
+    } else {
+      const chip = document.createElement('div');
+      chip.className = 'reaction-chip user-reacted';
+      chip.style.animation = 'modalZoom 0.2s ease-out';
+      const emojiSpan = document.createElement('span');
+      emojiSpan.textContent = REACTION_TYPES[reactionType];
+      const countSpan = document.createElement('span');
+      countSpan.textContent = ' 1';
+      chip.appendChild(emojiSpan);
+      chip.appendChild(countSpan);
+      chip.onclick = (e) => {
+        e.stopPropagation();
+        toggleReaction(bubble.dataset.id, collectionName, reactionType, true);
+      };
+      chipsContainer.appendChild(chip);
+    }
+    bubble.classList.add('has-reactions');
+  } else {
+    if (existingChip) {
+      const countSpan = existingChip.querySelectorAll('span')[1];
+      if (countSpan) {
+        const currentCount = parseInt(countSpan.textContent.trim()) || 0;
+        if (currentCount <= 1) {
+          existingChip.remove();
+          if (chipsContainer.children.length === 0) {
+            chipsContainer.remove();
+            bubble.classList.remove('has-reactions');
+          }
+        } else {
+          countSpan.textContent = ` ${currentCount - 1}`;
+          existingChip.classList.remove('user-reacted');
+        }
+      }
+    }
+  }
+}
+
+function showDropdownMenu(event, data) {
+  event.stopPropagation();
+  if (!contextMenu) {
+    return;
+  }
+  if (contextMenu.classList.contains("is-open") &&
+      state.currentContextMenuData?.id === data.id) {
+    hideDropdownMenu();
+    return;
+  }
+  state.currentContextMenuData = { ...data };
+  const now = Date.now();
+  const messageTime = parseInt(data.timestamp, 10);
+  const isRecent = isNaN(messageTime) ? true : (now - messageTime < 900000);
+  const isMine = data.isMine === "true";
+  const isAdmin = state.isCurrentUserAdmin;
+  if (menuEdit) {
+    menuEdit.style.display = isRecent && isMine ? "block" : "none";
+  }
+  if (menuDelete) {
+    menuDelete.style.display = "block";
+  }
+  if (menuPin) {
+    menuPin.style.display = isAdmin ? "block" : "none";
+    menuPin.textContent = data.isPinned === "true"
+      ? "Unpin Message"
+      : "Pin Message 📌";
+  }
+  if (menuBan) {
+    menuBan.style.display = (isAdmin && !isMine) ? "block" : "none";
+    if (isAdmin && !isMine && data.userId) {
+      (async () => {
+        try {
+          const banDocRef = doc(state.db, "banned_users", data.userId);
+          const banDocSnap = await getDoc(banDocRef);
+          const isBanned = banDocSnap.exists();
+          if (menuBan) {
+            menuBan.textContent = isBanned ? "Unban User ✅" : "Ban User 🚫";
+            menuBan.className = isBanned
+              ? "text-green-500 hover:text-green-400 font-bold border-t border-[#333] mt-1 pt-1"
+              : "text-red-500 hover:text-red-400 font-bold border-t border-[#333] mt-1 pt-1";
+          }
+        } catch (e) {}
+      })();
+    }
+  }
+  const rect = event.currentTarget.getBoundingClientRect();
+  const menuWidth = 150;
+  let left = isMine ? rect.right - menuWidth : rect.left;
+  if (left < 10) left = 10;
+  if (left + menuWidth > window.innerWidth - 10) {
+    left = window.innerWidth - menuWidth - 10;
+  }
+  contextMenu.style.top = `${rect.bottom + 2}px`;
+  contextMenu.style.left = `${left}px`;
+  contextMenu.classList.add("is-open");
+}
+
+function hideDropdownMenu() {
+  if (contextMenu) {
+    contextMenu.classList.remove("is-open");
+  }
+}
+
+function handleMessageClick(bubble) {
+  if (!state.isSelectionMode) return;
+  const docId = bubble.dataset.id;
+  if (state.selectedMessages.has(docId)) {
+    state.selectedMessages.delete(docId);
+    bubble.classList.remove("selected-message");
+  } else {
+    state.selectedMessages.add(docId);
+    bubble.classList.add("selected-message");
+  }
+  updateSelectionBar();
+}
+
+function enterSelectionMode() {
+  state.isSelectionMode = true;
+  document.body.classList.add("selection-mode");
+  if (selectionBar) {
+    selectionBar.classList.remove("hidden");
+    selectionBar.style.display = "flex";
+  }
+  if (chatForm) chatForm.classList.add("hidden");
+  if (confessionForm) confessionForm.classList.add("hidden");
+  if (state.currentContextMenuData) {
+    const docId = state.currentContextMenuData.id;
+    state.selectedMessages.add(docId);
+    const escapedId = escapeSelector(docId);
+    const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
+    if (bubble) {
+      bubble.classList.add("selected-message");
+    }
+  }
+  updateSelectionBar();
+}
+
+function exitSelectionMode() {
+  state.isSelectionMode = false;
+  document.body.classList.remove("selection-mode");
+  if (selectionBar) {
+    selectionBar.classList.add("hidden");
+  }
+  state.selectedMessages.clear();
+  if (state.currentPage === "chat") {
+    if (chatForm) {
+      chatForm.classList.remove("hidden");
+      chatForm.classList.add("flex");
+    }
+  } else {
+    if (confessionForm) {
+      confessionForm.classList.remove("hidden");
+      confessionForm.classList.add("flex");
+    }
+  }
+  document.querySelectorAll(".selected-message").forEach(el => {
+    el.classList.remove("selected-message");
+  });
+}
+
+function updateSelectionBar() {
+  const count = state.selectedMessages.size;
+  setTextSafely(selectionCount, `${count} selected`);
+  if (count === 0 && state.isSelectionMode) {
+    exitSelectionMode();
+  }
+}
+
+async function handleMultiDelete() {
+  const count = state.selectedMessages.size;
+  if (count === 0) return;
+  let allMine = true;
+  state.selectedMessages.forEach(id => {
+    const escapedId = escapeSelector(id);
+    const bubble = document.querySelector(`.message-bubble[data-id="${escapedId}"]`);
+    if (bubble && bubble.dataset.isMine !== "true") {
+      allMine = false;
+    }
+  });
+  const isAdmin = state.isCurrentUserAdmin;
+  const canDeleteEveryone = isAdmin || allMine;
+  setTextSafely(confirmModalText, `Delete ${count} message${count > 1 ? 's' : ''}?`);
+  if (confirmModalActionContainer) {
+    confirmModalActionContainer.innerHTML = '';
+    const btnForMe = document.createElement('button');
+    btnForMe.type = 'button';
+    btnForMe.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm border border-white text-white hover:bg-white hover:text-black transition";
+    btnForMe.textContent = "FOR ME";
+    btnForMe.onclick = async () => {
+      closeConfirmModal();
+      const batch = writeBatch(state.db);
+      state.selectedMessages.forEach((docId) => {
+        const docRef = doc(state.db, state.currentPage, docId);
+        batch.update(docRef, { hiddenFor: arrayUnion(state.currentUserId) });
+      });
+      try {
+        await batch.commit();
+      } catch (e) {
+        showToast("Failed to hide messages.", "error");
+      }
+      exitSelectionMode();
+    };
+    confirmModalActionContainer.appendChild(btnForMe);
+    if (canDeleteEveryone) {
+      const btnEveryone = document.createElement('button');
+      btnEveryone.type = 'button';
+      btnEveryone.className = "flex-1 px-4 py-2 rounded-lg font-bold text-sm bg-red-600 text-white hover:bg-red-500 border border-red-600 transition";
+      btnEveryone.textContent = "EVERYONE";
+      btnEveryone.onclick = async () => {
+        closeConfirmModal();
+        const batch = writeBatch(state.db);
+        state.selectedMessages.forEach((docId) => {
+          const docRef = doc(state.db, state.currentPage, docId);
+          batch.delete(docRef);
+        });
+        try {
+          await batch.commit();
+        } catch (e) {
+          showToast("Failed to delete messages.", "error");
+        }
+        exitSelectionMode();
+      };
+      confirmModalActionContainer.appendChild(btnEveryone);
+    }
+  }
+  if (confirmModal) {
+    confirmModal.classList.add("is-open");
+    confirmModal.setAttribute("aria-hidden", "false");
+  }
+}
+
+function showPage(page) {
+  if (page !== 'chat' && page !== 'confessions') {
+    page = 'chat';
+  }
+  state.currentPage = page;
+  if (state.isSelectionMode) exitSelectionMode();
+  cancelReplyMode();
+  document.querySelectorAll(".reaction-picker").forEach(p => p.remove());
+  if (typeof unsubscribers.confessions === 'function') {
+    unsubscribers.confessions();
+    unsubscribers.confessions = () => {};
+  }
+  if (typeof unsubscribers.chat === 'function') {
+    unsubscribers.chat();
+    unsubscribers.chat = () => {};
+  }
+  if (typeof unsubscribers.typingStatus === 'function') {
+    unsubscribers.typingStatus();
+    unsubscribers.typingStatus = () => {};
+  }
+  if (typingIndicator) typingIndicator.innerHTML = "&nbsp;";
+  state.unreadMessages = 0;
+  if (newMsgCount) newMsgCount.classList.add("hidden");
+  if (scrollToBottomBtn) {
+    scrollToBottomBtn.classList.add("hidden");
+    scrollToBottomBtn.style.display = "";
+  }
+  listenForPinnedMessages();
+  if (page === "confessions") {
+    navConfessions?.classList.add("active");
+    navConfessions?.setAttribute("aria-pressed", "true");
+    navChat?.classList.remove("active");
+    navChat?.setAttribute("aria-pressed", "false");
+    if (confessionForm) {
+      confessionForm.classList.add("flex");
+      confessionForm.classList.remove("hidden");
+    }
+    if (chatForm) {
+      chatForm.classList.add("hidden");
+      chatForm.classList.remove("flex");
+    }
+    if (typingIndicator) typingIndicator.classList.add("hidden");
+    listenForConfessions();
+  } else {
+    navChat?.classList.add("active");
+    navChat?.setAttribute("aria-pressed", "true");
+    navConfessions?.classList.remove("active");
+    navConfessions?.setAttribute("aria-pressed", "false");
+    if (chatForm) {
+      chatForm.classList.add("flex");
+      chatForm.classList.remove("hidden");
+    }
+    if (confessionForm) {
+      confessionForm.classList.add("hidden");
+      confessionForm.classList.remove("flex");
+    }
+    if (typingIndicator) typingIndicator.classList.remove("hidden");
+    listenForChat();
+    listenForTyping();
+  }
+}
+
+function safeRenderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
+  try {
+    renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot);
+  } catch (error) {
+    if (feedContainer) {
+      feedContainer.innerHTML = '';
+      const errorDiv = document.createElement("div");
+      errorDiv.className = "text-center p-4 text-red-500";
+      errorDiv.textContent = "Error rendering messages. Please refresh.";
+      const retryBtn = document.createElement("button");
+      retryBtn.className = "mt-2 px-4 py-2 bg-white text-black rounded";
+      retryBtn.textContent = "Retry";
+      retryBtn.onclick = () => showPage(state.currentPage);
+      feedContainer.appendChild(errorDiv);
+      feedContainer.appendChild(retryBtn);
+    }
+  }
+}
+
+function listenForConfessions(isRerender = false) {
+  if (isRerender) {
+    safeRenderFeed(state.lastConfessionDocs, "confessions", null, true);
+    return;
+  }
+  if (typeof unsubscribers.chat === 'function') {
+    unsubscribers.chat();
+    unsubscribers.chat = () => {};
+  }
+  if (feedContainer) {
+    feedContainer.innerHTML = '';
+    const loadingDiv = document.createElement('div');
+    loadingDiv.id = 'loading';
+    loadingDiv.className = 'text-center p-4 text-[#888888] text-sm';
+    loadingDiv.textContent = 'LOADING CONFESSIONS...';
+    feedContainer.appendChild(loadingDiv);
+  }
+  let isFirstSnapshot = true;
+  unsubscribers.confessions = onSnapshot(
+    query(state.confessionsCollection, orderBy("timestamp", "asc")),
+    (snapshot) => {
+      state.lastConfessionDocs = snapshot.docs;
+      safeRenderFeed(state.lastConfessionDocs, "confessions", snapshot, false, isFirstSnapshot);
+      isFirstSnapshot = false;
+    },
+    (error) => {
+      if (feedContainer) {
+        feedContainer.innerHTML = '';
+        const errorDiv = document.createElement("div");
+        errorDiv.className = "text-center p-4 text-red-500";
+        errorDiv.textContent = "Error loading confessions: " + error.message;
+        feedContainer.appendChild(errorDiv);
+      }
+    }
+  );
+}
+
+function listenForChat(isRerender = false) {
+  if (isRerender) {
+    safeRenderFeed(state.lastChatDocs, "chat", null, true);
+    return;
+  }
+  if (typeof unsubscribers.confessions === 'function') {
+    unsubscribers.confessions();
+    unsubscribers.confessions = () => {};
+  }
+  if (feedContainer) {
+    feedContainer.innerHTML = '';
+    const loadingDiv = document.createElement('div');
+    loadingDiv.id = 'loading';
+    loadingDiv.className = 'text-center p-4 text-[#888888] text-sm';
+    loadingDiv.textContent = 'LOADING CHAT...';
+    feedContainer.appendChild(loadingDiv);
+  }
+  let isFirstSnapshot = true;
+  unsubscribers.chat = onSnapshot(
+    query(state.chatCollection, orderBy("timestamp", "asc")),
+    (snapshot) => {
+      state.lastChatDocs = snapshot.docs;
+      safeRenderFeed(state.lastChatDocs, "chat", snapshot, false, isFirstSnapshot);
+      isFirstSnapshot = false;
+    },
+    (error) => {
+      if (feedContainer) {
+        feedContainer.innerHTML = '';
+        const errorDiv = document.createElement("div");
+        errorDiv.className = "text-center p-4 text-red-500";
+        errorDiv.textContent = "Error loading chat: " + error.message;
+        feedContainer.appendChild(errorDiv);
+      }
+    }
+  );
+}
 
 function listenForTyping() {
   if (typeof unsubscribers.typingStatus === 'function') {
     unsubscribers.typingStatus();
     unsubscribers.typingStatus = () => {};
   }
-  
   unsubscribers.typingStatus = onSnapshot(
     state.typingStatusCollection,
     (snapshot) => {
       const now = Date.now();
       const typingUsers = [];
-      
       snapshot.docs.forEach((docSnap) => {
         const data = docSnap.data();
         const oduserId = docSnap.id;
-        
         if (oduserId === state.currentUserId) return;
-        
         if (data.isTyping && data.timestamp) {
           const timeSinceTyping = now - data.timestamp;
           if (timeSinceTyping < TYPING_STALE_THRESHOLD) {
@@ -2574,7 +2540,6 @@ function listenForTyping() {
           }
         }
       });
-      
       if (typingIndicator) {
         if (typingUsers.length === 0) {
           typingIndicator.innerHTML = "&nbsp;";
@@ -2595,124 +2560,29 @@ function listenForTyping() {
   );
 }
 
-// ============================
-// MESSAGE LISTENERS
-// ============================
-
-function listenForConfessions(isRerender = false) {
-  if (isRerender) {
-    safeRenderFeed(state.lastConfessionDocs, "confessions", null, true);
-    return;
+const updateTypingStatus = debounce(async (isTyping) => {
+  if (!state.db || !state.currentUserId) return;
+  if (state.typingTimeout) {
+    clearTimeout(state.typingTimeout);
+    state.typingTimeout = null;
   }
-  
-  if (typeof unsubscribers.chat === 'function') {
-    unsubscribers.chat();
-    unsubscribers.chat = () => {};
-  }
-  
-  if (feedContainer) {
-    feedContainer.innerHTML = '';
-    const loadingDiv = document.createElement('div');
-    loadingDiv.id = 'loading';
-    loadingDiv.className = 'text-center p-4 text-[#888888] text-sm';
-    loadingDiv.textContent = 'LOADING CONFESSIONS...';
-    feedContainer.appendChild(loadingDiv);
-  }
-  
-  let isFirstSnapshot = true;
-  
-  unsubscribers.confessions = onSnapshot(
-    query(state.confessionsCollection, orderBy("timestamp", "asc")),
-    (snapshot) => {
-      state.lastConfessionDocs = snapshot.docs;
-      safeRenderFeed(state.lastConfessionDocs, "confessions", snapshot, false, isFirstSnapshot);
-      isFirstSnapshot = false;
-    },
-    (error) => {
-      if (feedContainer) {
-        feedContainer.innerHTML = '';
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "text-center p-4 text-red-500";
-        errorDiv.textContent = "Error loading confessions. Please refresh.";
-        feedContainer.appendChild(errorDiv);
-      }
-    }
-  );
-}
-
-function listenForChat(isRerender = false) {
-  if (isRerender) {
-    safeRenderFeed(state.lastChatDocs, "chat", null, true);
-    return;
-  }
-  
-  if (typeof unsubscribers.confessions === 'function') {
-    unsubscribers.confessions();
-    unsubscribers.confessions = () => {};
-  }
-  
-  if (feedContainer) {
-    feedContainer.innerHTML = '';
-    const loadingDiv = document.createElement('div');
-    loadingDiv.id = 'loading';
-    loadingDiv.className = 'text-center p-4 text-[#888888] text-sm';
-    loadingDiv.textContent = 'LOADING CHAT...';
-    feedContainer.appendChild(loadingDiv);
-  }
-  
-  let isFirstSnapshot = true;
-  
-  unsubscribers.chat = onSnapshot(
-    query(state.chatCollection, orderBy("timestamp", "asc")),
-    (snapshot) => {
-      state.lastChatDocs = snapshot.docs;
-      safeRenderFeed(state.lastChatDocs, "chat", snapshot, false, isFirstSnapshot);
-      isFirstSnapshot = false;
-    },
-    (error) => {
-      if (feedContainer) {
-        feedContainer.innerHTML = '';
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "text-center p-4 text-red-500";
-        errorDiv.textContent = "Error loading chat. Please refresh.";
-        feedContainer.appendChild(errorDiv);
-      }
-    }
-  );
-}
-
-function safeRenderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
   try {
-    renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot);
-  } catch (error) {
-    console.error('Render error:', error);
-    if (feedContainer) {
-      feedContainer.innerHTML = '';
-      const errorDiv = document.createElement("div");
-      errorDiv.className = "text-center p-4 text-red-500";
-      errorDiv.textContent = "Error rendering messages. Please refresh.";
-      
-      const retryBtn = document.createElement("button");
-      retryBtn.className = "mt-2 px-4 py-2 bg-white text-black rounded";
-      retryBtn.textContent = "Retry";
-      retryBtn.onclick = () => showPage(state.currentPage);
-      
-      feedContainer.appendChild(errorDiv);
-      feedContainer.appendChild(retryBtn);
+    const typingDocRef = doc(state.db, "typingStatus", state.currentUserId);
+    await setDoc(typingDocRef, {
+      isTyping: isTyping,
+      timestamp: Date.now()
+    });
+    if (isTyping) {
+      state.typingTimeout = setTimeout(() => {
+        updateTypingStatus(false);
+      }, TYPING_TIMEOUT);
     }
-  }
-}
-
-// ============================
-// FEED RENDERER
-// ============================
+  } catch (e) {}
+}, 300);
 
 function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
   if (!feedContainer) return;
-  
   document.querySelectorAll(".reaction-picker").forEach(p => p.remove());
-  
-  // Handle notifications for new messages
   if (!isRerender && snapshot) {
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added") {
@@ -2720,26 +2590,21 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
         const msgTime = data.timestamp ? data.timestamp.toMillis() : 0;
         const isNewMessage = msgTime > appStartTime;
         const isHidden = data.hiddenFor?.includes(state.currentUserId);
-        
         if (isNewMessage &&
             (document.visibilityState === "hidden" || state.currentPage !== type) &&
             data.userId !== state.currentUserId &&
             !isHidden) {
-          // Sanitized notification (Issue #22)
           showNotification(
             type === "chat" ? "New Chat" : "New Confession",
-            sanitizeNotificationText(data.text, 100)
+            data.text?.substring(0, 100) || "New message"
           );
         }
       }
     });
   }
-  
   const prevScrollTop = feedContainer.scrollTop;
   const wasAtBottom = state.userIsAtBottom;
-  
   feedContainer.innerHTML = "";
-  
   if (docs.length === 0) {
     const emptyDiv = document.createElement("div");
     emptyDiv.id = "loading";
@@ -2748,31 +2613,23 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
     feedContainer.appendChild(emptyDiv);
     return;
   }
-  
   let lastUserId = null;
   let lastDateString = null;
-  
   docs.forEach((docInstance) => {
     const data = docInstance.data();
-    
     if (data.hiddenFor?.includes(state.currentUserId)) {
       return;
     }
-    
     const text = data.text || "...";
     const messageDateObj = data.timestamp ? data.timestamp.toDate() : new Date();
     const messageDateStr = messageDateObj.toDateString();
     const docUserId = data.userId;
-    
     if (docUserId && !state.userProfiles[docUserId]) {
       requestUserProfile(docUserId);
     }
-    
     if (data.replyTo?.userId && !state.userProfiles[data.replyTo.userId]) {
       requestUserProfile(data.replyTo.userId);
     }
-    
-    // Date separator
     if (lastDateString !== messageDateStr) {
       const sepDiv = document.createElement('div');
       sepDiv.className = 'date-separator';
@@ -2783,32 +2640,23 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       lastDateString = messageDateStr;
       lastUserId = null;
     }
-    
     const profile = state.userProfiles[docUserId] || {};
     const username = profile.username || "Anonymous";
     const firstChar = (username[0] || "?").toUpperCase();
     const photoURL = profile.profilePhotoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(firstChar)}&background=random&size=64`;
-    
     const isMine = state.currentUserId && docUserId === state.currentUserId;
     const isConsecutive = docUserId && docUserId === lastUserId;
     lastUserId = docUserId;
-    
     const userColor = getUserColor(docUserId);
-    
-    // Create message structure
     const alignWrapper = document.createElement("div");
     alignWrapper.className = `flex w-full ${isMine ? "justify-end" : "justify-start"}`;
-    
     const row = document.createElement("div");
     row.className = "message-wrapper";
-    
     const bubble = document.createElement("div");
     bubble.className = `message-bubble rounded-lg max-w-xs sm:max-w-md md:max-w-lg ${isMine ? "my-message" : ""}`;
-    
     if (data.isPinned) {
       bubble.classList.add("pinned");
     }
-    
     bubble.dataset.id = docInstance.id;
     bubble.dataset.text = text;
     bubble.dataset.isMine = String(isMine);
@@ -2816,8 +2664,6 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
     bubble.dataset.username = username;
     bubble.dataset.isPinned = String(data.isPinned || false);
     bubble.dataset.timestamp = data.timestamp ? String(data.timestamp.toMillis()) : String(Date.now());
-    
-    // Apply user color
     if (!isMine) {
       bubble.style.borderLeft = `3px solid ${userColor}`;
       bubble.style.background = `linear-gradient(90deg, ${userColor}10, transparent)`;
@@ -2825,11 +2671,9 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       bubble.style.borderRight = `3px solid ${userColor}`;
       bubble.style.background = `linear-gradient(270deg, ${userColor}10, transparent)`;
     }
-    
     if (state.isSelectionMode && state.selectedMessages.has(docInstance.id)) {
       bubble.classList.add("selected-message");
     }
-    
     bubble.addEventListener('click', (e) => {
       if (state.isSelectionMode) {
         e.preventDefault();
@@ -2837,8 +2681,6 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
         handleMessageClick(bubble);
       }
     });
-    
-    // Kebab menu button
     const kebabBtn = document.createElement("button");
     kebabBtn.type = "button";
     kebabBtn.className = "kebab-btn";
@@ -2848,12 +2690,9 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       e.stopPropagation();
       showDropdownMenu(e, bubble.dataset);
     });
-    
-    // Message header (avatar + username)
     if (!isConsecutive) {
       const headerElement = document.createElement("div");
       headerElement.className = `flex items-center gap-1.5 mb-1 ${isMine ? "justify-end" : "justify-start"}`;
-      
       const imgElement = document.createElement("img");
       imgElement.src = photoURL;
       imgElement.alt = "";
@@ -2864,38 +2703,29 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       imgElement.onerror = function() {
         this.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random&size=64`;
       };
-      
       const usernameElement = document.createElement("div");
       usernameElement.className = `font-bold text-sm opacity-90 ${isMine ? "order-1 text-right" : "order-2 text-left"}`;
       usernameElement.textContent = username;
       if (!isMine) usernameElement.style.color = userColor;
-      
       headerElement.appendChild(imgElement);
       headerElement.appendChild(usernameElement);
       bubble.appendChild(headerElement);
     }
-    
-    // Reply preview
     if (data.replyTo) {
       const replyPreview = document.createElement("div");
       replyPreview.className = "reply-preview";
-      
       const replyAuthorEl = document.createElement("div");
       replyAuthorEl.className = "reply-author";
       replyAuthorEl.textContent = state.userProfiles[data.replyTo.userId]?.username || "Anonymous";
-      
       if (!isMine) {
         replyPreview.style.borderLeftColor = userColor;
         replyAuthorEl.style.color = userColor;
       }
-      
       const replyTextEl = document.createElement("div");
       replyTextEl.className = "reply-text";
       replyTextEl.textContent = data.replyTo.text;
-      
       replyPreview.appendChild(replyAuthorEl);
       replyPreview.appendChild(replyTextEl);
-      
       replyPreview.addEventListener("click", (e) => {
         e.stopPropagation();
         const escapedId = escapeSelector(data.replyTo.messageId);
@@ -2908,14 +2738,10 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
           }, 1000);
         }
       });
-      
       bubble.appendChild(replyPreview);
     }
-    
-    // Message text
     const textElement = document.createElement("p");
     textElement.className = "text-left";
-    
     if (data.isPinned) {
       const pinIcon = document.createElement("span");
       pinIcon.className = "text-amber-400 mr-1";
@@ -2923,66 +2749,48 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       pinIcon.textContent = "📌";
       textElement.appendChild(pinIcon);
     }
-    
     textElement.appendChild(document.createTextNode(text));
     bubble.appendChild(textElement);
-    
-    // Message footer (timestamp)
     const footerDiv = document.createElement("div");
     footerDiv.className = "bubble-footer";
     footerDiv.style.justifyContent = isMine ? "flex-end" : "flex-start";
-    
     const timeElement = document.createElement("span");
     timeElement.className = "inner-timestamp";
     timeElement.dataset.ts = data.timestamp ? String(data.timestamp.toMillis()) : String(Date.now());
-    
     let timeText = formatMessageTime(messageDateObj);
     if (data.edited) timeText += " (edited)";
     timeElement.textContent = timeText;
-    
     footerDiv.appendChild(timeElement);
     bubble.appendChild(footerDiv);
-    
-    // Reactions
     const docReactions = data.reactions || {};
     const chipsContainer = document.createElement("div");
     chipsContainer.className = "reaction-chips-container";
     let hasChips = false;
-    
     Object.keys(REACTION_TYPES).forEach(rtype => {
       const userIds = docReactions[rtype] || [];
       if (userIds.length > 0) {
         hasChips = true;
         const chip = document.createElement("div");
         chip.className = "reaction-chip";
-        
         const hasReacted = userIds.includes(state.currentUserId);
         if (hasReacted) chip.classList.add("user-reacted");
-        
         const emojiSpan = document.createElement("span");
         emojiSpan.textContent = REACTION_TYPES[rtype];
-        
         const countSpan = document.createElement("span");
         countSpan.textContent = ` ${userIds.length}`;
-        
         chip.appendChild(emojiSpan);
         chip.appendChild(countSpan);
-        
         chip.onclick = (e) => {
           e.stopPropagation();
           toggleReaction(docInstance.id, type, rtype, hasReacted);
         };
-        
         chipsContainer.appendChild(chip);
       }
     });
-    
     if (hasChips) {
       bubble.appendChild(chipsContainer);
       bubble.classList.add("has-reactions");
     }
-    
-    // Reply button
     const replyBtn = document.createElement("button");
     replyBtn.type = "button";
     replyBtn.className = "side-action-btn";
@@ -2992,18 +2800,14 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       e.stopPropagation();
       startReplyMode(bubble.dataset);
     };
-    
-    // React button
     const reactBtn = document.createElement("button");
     reactBtn.type = "button";
     reactBtn.className = "side-action-btn";
     reactBtn.setAttribute("aria-label", "Add reaction");
     reactBtn.textContent = "♡";
-    
     const picker = document.createElement("div");
     picker.className = "reaction-picker hidden";
     picker.setAttribute("role", "menu");
-    
     Object.entries(REACTION_TYPES).forEach(([rtype, emoji]) => {
       const opt = document.createElement("span");
       opt.className = "reaction-option";
@@ -3018,34 +2822,27 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       };
       picker.appendChild(opt);
     });
-    
     reactBtn.onclick = (e) => {
       e.stopPropagation();
       document.querySelectorAll(".reaction-picker").forEach(p => {
         p.classList.add("hidden");
         p.remove();
       });
-      
       const rect = reactBtn.getBoundingClientRect();
       picker.style.top = `${rect.top - 60}px`;
-      
       if (window.innerWidth < 640) {
         picker.style.left = "50%";
         picker.style.transform = "translateX(-50%)";
       } else {
         picker.style.left = `${rect.left}px`;
       }
-      
       picker.classList.remove("hidden");
       document.body.appendChild(picker);
     };
-    
-    // Assemble message row
     const bubbleWrapper = document.createElement("div");
     bubbleWrapper.className = `bubble-wrapper ${isMine ? "my-bubble-wrapper" : ""} ${isConsecutive ? "mt-0.5" : "mt-2"}`;
     bubbleWrapper.appendChild(kebabBtn);
     bubbleWrapper.appendChild(bubble);
-    
     if (isMine) {
       row.appendChild(reactBtn);
       row.appendChild(replyBtn);
@@ -3055,28 +2852,21 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       row.appendChild(replyBtn);
       row.appendChild(reactBtn);
     }
-    
     alignWrapper.appendChild(row);
     feedContainer.appendChild(alignWrapper);
   });
-  
-  // Scroll anchor
   const scrollAnchor = document.createElement("div");
   scrollAnchor.id = "scrollAnchor";
   scrollAnchor.style.height = "4px";
   scrollAnchor.style.width = "100%";
   scrollAnchor.style.flexShrink = "0";
   feedContainer.appendChild(scrollAnchor);
-  
   if (state.bottomObserver) {
     state.bottomObserver.disconnect();
     state.bottomObserver.observe(scrollAnchor);
   }
-  
-  // Handle scrolling
   const hasNewMessages = snapshot &&
     snapshot.docChanges().some(change => change.type === 'added');
-  
   if (isFirstSnapshot && docs.length > 0) {
     feedContainer.style.scrollBehavior = "auto";
     scrollToBottom();
@@ -3087,7 +2877,6 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
   } else if (hasNewMessages) {
     const lastDoc = docs[docs.length - 1];
     const isOwnMessage = lastDoc && lastDoc.data().userId === state.currentUserId;
-    
     if (isOwnMessage || wasAtBottom) {
       scrollToBottom();
     } else {
@@ -3099,28 +2888,150 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
   }
 }
 
-// ============================
-// REPLY MODE
-// ============================
+async function postMessage(collectionRef, input) {
+  if (!state.db || !state.currentUserId) {
+    showToast("Not connected. Please refresh.", "error");
+    return;
+  }
+  if (state.currentUsername === "Anonymous") {
+    showToast("Please set a username first!", "error");
+    openProfileModal();
+    return;
+  }
+  if (state.isDeviceBanned) {
+    showToast("Your device has been banned.", "error");
+    return;
+  }
+  if (state.isBanned) {
+    showToast("You have been banned.", "error");
+    return;
+  }
+  const cooldownCheck = canSendMessageNow();
+  if (!cooldownCheck.allowed) {
+    showToast(cooldownCheck.message, "error");
+    return;
+  }
+  const spamCheck = checkSpamStatus();
+  if (!spamCheck.allowed) {
+    if (spamCheck.shouldBan) {
+      await autoBanForSpam();
+      return;
+    }
+  }
+  if (spamCheck.warning) {
+    showSpamWarning(spamCheck.warning);
+  }
+  const validation = validateMessageBeforePost(input.value);
+  if (!validation.valid) {
+    showToast(validation.error, "error");
+    input.focus({ preventScroll: true });
+    return;
+  }
+  const text = validation.text;
+  const isChat = collectionRef === state.chatCollection;
+  const submitBtn = isChat ?
+    document.getElementById('chatButton') :
+    document.getElementById('confessionButton');
+  const inputToRefocus = input;
+  const resetUI = () => {
+    if (input) {
+      input.disabled = false;
+    }
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('loading');
+      submitBtn.textContent = isChat ? 'SEND ✈️' : 'POST ✍️';
+    }
+  };
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add('loading');
+    submitBtn.textContent = 'SENDING...';
+  }
+  try {
+    const messageData = {
+      text: text,
+      timestamp: serverTimestamp(),
+      userId: state.currentUserId,
+    };
+    if (state.replyToMessage) {
+      messageData.replyTo = {
+        messageId: state.replyToMessage.id,
+        userId: state.replyToMessage.userId,
+        text: (state.replyToMessage.text || '').substring(0, 500)
+      };
+    }
+    const batch = writeBatch(state.db);
+    const messageRef = doc(collectionRef);
+    batch.set(messageRef, messageData);
+    const userRef = doc(state.db, "users", state.currentUserId);
+    batch.update(userRef, {
+      lastMessageAt: serverTimestamp()
+    });
+    await Promise.race([
+      batch.commit(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Message send timed out')), 15000)
+      )
+    ]);
+    recordMessage();
+    const currentCount = spamTracker.messageTimestamps.length;
+    if (currentCount >= SPAM_CONFIG.CF_BAN_THRESHOLD - 1) {
+      showSpamWarning(`🚨 You've sent ${currentCount} messages in ${SPAM_CONFIG.TIME_WINDOW / 1000}s. STOP NOW to avoid ban!`);
+    }
+    if (input) {
+      input.value = "";
+    }
+    cancelReplyMode();
+    updateTypingStatus(false);
+    scrollToBottom();
+    const counter = isChat ? chatCharCount : confessionCharCount;
+    if (counter) {
+      updateCharacterCounter(input, counter);
+    }
+    resetUI();
+    requestAnimationFrame(() => {
+      if (inputToRefocus) {
+        inputToRefocus.focus({ preventScroll: true });
+      }
+    });
+  } catch (error) {
+    if (error.code === 'permission-denied') {
+      if (state.isBanned || state.isDeviceBanned) {
+        showToast("You have been banned from sending messages.", "error");
+      } else {
+        showToast("Slow down! Wait 1 second between messages.", "error");
+      }
+    } else if (error.message === 'Message send timed out') {
+      showToast("Message timed out. Please check your connection.", "error");
+    } else if (error.code === 'unavailable') {
+      showToast("Server unavailable. Please try again.", "error");
+    } else {
+      showToast("Failed to send message. Please try again.", "error");
+    }
+    resetUI();
+    requestAnimationFrame(() => {
+      if (inputToRefocus) {
+        inputToRefocus.focus({ preventScroll: true });
+      }
+    });
+  }
+}
 
 function startReplyMode(messageData) {
   const repliedUserId = messageData.userId ||
     (messageData.isMine === "true" ? state.currentUserId : null);
-  
   state.replyToMessage = {
     id: messageData.id,
     userId: repliedUserId,
     text: messageData.text
   };
-  
   const repliedUsername = state.userProfiles[repliedUserId]?.username || "Anonymous";
   setTextSafely(replyAuthor, `Replying to ${repliedUsername}`);
   setTextSafely(replyText, state.replyToMessage.text);
-  
   if (replyBar) {
     replyBar.classList.add("show");
   }
-  
   const input = state.currentPage === "chat" ? chatInput : confessionInput;
   if (input) input.focus();
 }
@@ -3132,153 +3043,15 @@ function cancelReplyMode() {
   }
 }
 
-// ============================
-// MESSAGE POSTING (Via Cloud Function - Issue #23)
-// ============================
-
-/**
- * Post message via Cloud Function (Issue #23)
- */
-async function postMessage(collectionName, input) {
-  if (!state.currentUserId) {
-    showToast(ERROR_MESSAGES.AUTH, "error");
-    return;
-  }
-  
-  if (state.currentUsername === "Anonymous") {
-    showToast("Please set a username first!", "error");
-    openProfileModal();
-    return;
-  }
-  
-  if (state.isBanned || state.isDeviceBanned) {
-    showToast(ERROR_MESSAGES.BANNED, "error");
-    return;
-  }
-  
-  // Client-side rate limit check (backup)
-  const now = Date.now();
-  if (now - state.lastMessageTime < CLIENT_RATE_LIMITS.MESSAGE_COOLDOWN_MS) {
-    const waitTime = Math.ceil((CLIENT_RATE_LIMITS.MESSAGE_COOLDOWN_MS - (now - state.lastMessageTime)) / 1000);
-    showToast(`Please wait ${waitTime} second${waitTime > 1 ? 's' : ''}...`, "error");
-    return;
-  }
-  
-  const validation = validateMessageBeforePost(input.value);
-  if (!validation.valid) {
-    showToast(validation.error, "error");
-    input.focus({ preventScroll: true });
-    return;
-  }
-  
-  const text = validation.text;
-  const isChat = collectionName === 'chat';
-  
-  const submitBtn = isChat ?
-    document.getElementById('chatButton') :
-    document.getElementById('confessionButton');
-  
-  const inputToRefocus = input;
-  
-  const resetUI = () => {
-    if (input) {
-      input.disabled = false;
-    }
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.classList.remove('loading');
-      submitBtn.textContent = isChat ? 'SEND ✈️' : 'POST ✍️';
-    }
-  };
-  
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.classList.add('loading');
-    submitBtn.textContent = 'SENDING...';
-  }
-  
-  try {
-    // Get reCAPTCHA token (Issue #15)
-    const recaptchaToken = await getRecaptchaToken('send_message');
-    
-    // Prepare message data
-    const messageData = {
-      text: text,
-      collection: collectionName,
-      recaptchaToken: recaptchaToken,
-      fingerprint: state.deviceInfo.fingerprint,
-    };
-    
-    // Add reply data if present
-    if (state.replyToMessage) {
-      messageData.replyTo = {
-        messageId: state.replyToMessage.id,
-        userId: state.replyToMessage.userId,
-        text: (state.replyToMessage.text || '').substring(0, 200)
-      };
-    }
-    
-    // Send via Cloud Function (Issue #23)
-    const result = await state.cloudFunctions.sendMessage(messageData);
-    
-    if (result.data?.success) {
-      state.lastMessageTime = Date.now();
-      
-      if (input) {
-        input.value = "";
-      }
-      
-      cancelReplyMode();
-      updateTypingStatus(false);
-      scrollToBottom();
-      
-      const counter = isChat ? chatCharCount : confessionCharCount;
-      if (counter) {
-        updateCharacterCounter(input, counter);
-      }
-      
-      resetUI();
-      
-      requestAnimationFrame(() => {
-        if (inputToRefocus) {
-          inputToRefocus.focus({ preventScroll: true });
-        }
-      });
-    } else {
-      throw new Error('Message send failed');
-    }
-    
-  } catch (error) {
-    // Generic error message (Issue #20)
-    const message = getGenericErrorMessage(error);
-    showToast(message, "error");
-    
-    resetUI();
-    
-    requestAnimationFrame(() => {
-      if (inputToRefocus) {
-        inputToRefocus.focus({ preventScroll: true });
-      }
-    });
-  }
-}
-
-// ============================
-// EVENT LISTENERS
-// ============================
-
-// Prevent button mousedown from stealing focus
 if (window.matchMedia('(hover: hover)').matches) {
   document.getElementById('chatButton')?.addEventListener('mousedown', (e) => {
     e.preventDefault();
   }, { passive: false });
-  
   document.getElementById('confessionButton')?.addEventListener('mousedown', (e) => {
     e.preventDefault();
   }, { passive: false });
 }
 
-// Click outside handlers
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".side-action-btn") && !e.target.closest(".reaction-picker")) {
     document.querySelectorAll(".reaction-picker").forEach(p => {
@@ -3286,13 +3059,11 @@ document.addEventListener("click", (e) => {
       p.remove();
     });
   }
-  
   if (!contextMenu?.contains(e.target) && !e.target.closest(".kebab-btn")) {
     hideDropdownMenu();
   }
 });
 
-// Update timestamps periodically
 setInterval(() => {
   document.querySelectorAll('.inner-timestamp').forEach(el => {
     const ts = parseInt(el.dataset.ts, 10);
@@ -3303,23 +3074,20 @@ setInterval(() => {
   });
 }, 60000);
 
-// Scroll button
 scrollToBottomBtn?.addEventListener("click", scrollToBottom);
 
-// Form submissions
 confessionForm?.addEventListener("submit", (e) => {
   e.preventDefault();
   e.stopPropagation();
-  postMessage("confessions", confessionInput);
+  postMessage(state.confessionsCollection, confessionInput);
 });
 
 chatForm?.addEventListener("submit", (e) => {
   e.preventDefault();
   e.stopPropagation();
-  postMessage("chat", chatInput);
+  postMessage(state.chatCollection, chatInput);
 });
 
-// Navigation
 navConfessions?.addEventListener("click", () => showPage("confessions"));
 navChat?.addEventListener("click", () => showPage("chat"));
 
@@ -3337,19 +3105,15 @@ navChat?.addEventListener("keydown", (e) => {
   }
 });
 
-// Profile modal
 profileButton?.addEventListener("click", openProfileModal);
 modalCloseButton?.addEventListener("click", closeProfileModal);
 modalSaveButton?.addEventListener("click", handleProfileSave);
 
-// Edit modal
 editModalCancelButton?.addEventListener("click", closeEditModal);
 editModalSaveButton?.addEventListener("click", saveEdit);
 
-// Confirm modal
 confirmModalNoButton?.addEventListener("click", closeConfirmModal);
 
-// Context menu actions
 menuEdit?.addEventListener("click", () => {
   if (state.currentContextMenuData) {
     showEditModal(
@@ -3378,18 +3142,15 @@ menuSelect?.addEventListener("click", () => {
   hideDropdownMenu();
 });
 
-// Selection mode
 selectionCancel?.addEventListener("click", exitSelectionMode);
 selectionDelete?.addEventListener("click", handleMultiDelete);
 
-// Reply
 cancelReply?.addEventListener("click", cancelReplyMode);
 
-// Input handlers
 confessionInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    postMessage("confessions", confessionInput);
+    postMessage(state.confessionsCollection, confessionInput);
   } else {
     updateTypingStatus(true);
   }
@@ -3398,7 +3159,7 @@ confessionInput?.addEventListener("keydown", (e) => {
 chatInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    postMessage("chat", chatInput);
+    postMessage(state.chatCollection, chatInput);
   } else {
     updateTypingStatus(true);
   }
@@ -3414,7 +3175,6 @@ confessionInput?.addEventListener("input", () => {
   updateCharacterCounter(confessionInput, confessionCharCount);
 });
 
-// Keyboard shortcuts
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (profileModal?.classList.contains("is-open")) {
@@ -3433,7 +3193,6 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// Visibility change
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     if (state.userIsAtBottom) {
@@ -3443,9 +3202,8 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Page unload
 window.addEventListener("beforeunload", () => {
-  if (state.currentUserId) {
+  if (state.db && state.currentUserId) {
     updateTypingStatus(false);
   }
 });
@@ -3454,12 +3212,7 @@ window.addEventListener('unload', () => {
   cleanupAllListeners();
 });
 
-// ============================
-// INITIALIZE APPLICATION
-// ============================
-
 initFirebase().catch(err => {
-  console.error('Initialization failed');
   setTextSafely(loading, "Error: Failed to initialize. Please refresh the page.");
   hideBanCheckOverlay();
 });
