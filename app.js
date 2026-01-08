@@ -37,6 +37,7 @@
   }, { passive: true });
 })();
 
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app-check.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
 import {
@@ -1428,6 +1429,10 @@ async function initFirebase() {
   try {
     state.deviceInfo = await initializeDeviceIdentification();
     state.app = initializeApp(firebaseConfig);
+    const appCheck = initializeAppCheck(state.app, {
+        provider: new ReCaptchaEnterpriseProvider('6LctUTksAAAAAJTTsn58fdeuHelFA_3bsVOovfiM'),
+        isTokenAutoRefreshEnabled: true 
+    });
     try {
       state.db = initializeFirestore(state.app, {
         localCache: persistentLocalCache({
