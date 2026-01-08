@@ -32,15 +32,29 @@ service cloud.firestore {
     }
 
     // ============================
-    // 1.5 DEVICE REGISTRATION RATE LIMIT
+    // 1.5 DEVICE REGISTRATION RATE LIMIT (SECURE FIX)
     // ============================
 
     function canRegisterDevice() {
       let userDocRef = /databases/$(database)/documents/users/$(request.auth.uid);
       
-      return !exists(userDocRef) || 
-             !('lastDeviceReg' in get(userDocRef).data) ||
-             get(userDocRef).data.lastDeviceReg + duration.value(1, 'h') < request.time;
+      // 🔒 SECURITY FIX:
+      // 1. We check 'getAfter' to ensure the user is WRITING to their profile 
+      //    in the same transaction (Batch Write). This kills the "Ghost Device" spam.
+      // 2. We check 'get' (current state) to enforce the 1-hour rate limit.
+      
+      return 
+        // PART A: Enforce Batch Update (Blocks Hacker)
+        getAfter(userDocRef).data.lastDeviceReg == request.time
+        
+        && 
+        
+        // PART B: Rate Limit (Standard Logic)
+        (
+           !exists(userDocRef) || 
+           !('lastDeviceReg' in get(userDocRef).data) ||
+           get(userDocRef).data.lastDeviceReg + duration.value(1, 'h') < request.time
+        );
     }
 
     function isValidDeviceRegTimestampCreate() {
