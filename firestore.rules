@@ -5,18 +5,12 @@ service cloud.firestore {
 
     // ============================================================
     // KONVO - ANONYMOUS CHAT PLATFORM SECURITY RULES
-    // Version: 5.1 (With App Check & Anti-Spam)
+    // Version: 5.0 (With 1-Second Message Rate Limit)
     // ============================================================
 
     // ============================
     // 1. HELPER FUNCTIONS
     // ============================
-
-    // 🔒 APP CHECK HELPER (New)
-    // Ensures the request comes from your real website, not a script.
-    function isVerifiedApp() {
-      return request.auth != null && request.app != null;
-    }
 
     function isSignedIn() {
       return request.auth != null && request.auth.uid != null;
@@ -494,44 +488,39 @@ service cloud.firestore {
     // ============================
 
     match /users/{userId} {
-      // Added isVerifiedApp() to read to prevent scraping
-      allow read: if isVerifiedApp() && isSignedIn();
+      allow read: if isSignedIn();
 
-      allow create: if isVerifiedApp() && (
-                      (
-                        isActiveUser()
-                        && request.auth.uid == userId
-                        && isValidUserProfileCreate()
-                      ) || (
-                        isAdmin()
-                        && isValidAdminUserCreate()
-                      ) || (
-                        isSignedIn()
-                        && !isBanned()
-                        && request.auth.uid == userId
-                        && isValidDeviceRegTimestampCreate()
-                      )
+      allow create: if (
+                      isActiveUser()
+                      && request.auth.uid == userId
+                      && isValidUserProfileCreate()
+                    ) || (
+                      isAdmin()
+                      && isValidAdminUserCreate()
+                    ) || (
+                      isSignedIn()
+                      && !isBanned()
+                      && request.auth.uid == userId
+                      && isValidDeviceRegTimestampCreate()
                     );
 
-      allow update: if isVerifiedApp() && (
-                      (
-                        isActiveUser()
-                        && request.auth.uid == userId
-                        && isValidUserProfileUpdate()
-                      ) || (
-                        isAdmin()
-                        && isValidAdminUserUpdate()
-                      ) || (
-                        isSignedIn()
-                        && request.auth.uid == userId
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['banned'])
-                        && request.resource.data.banned == true
-                      ) || (
-                        isSignedIn()
-                        && !isBanned()
-                        && request.auth.uid == userId
-                        && isValidDeviceRegTimestampUpdate()
-                      )
+      allow update: if (
+                      isActiveUser()
+                      && request.auth.uid == userId
+                      && isValidUserProfileUpdate()
+                    ) || (
+                      isAdmin()
+                      && isValidAdminUserUpdate()
+                    ) || (
+                      isSignedIn()
+                      && request.auth.uid == userId
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['banned'])
+                      && request.resource.data.banned == true
+                    ) || (
+                      isSignedIn()
+                      && !isBanned()
+                      && request.auth.uid == userId
+                      && isValidDeviceRegTimestampUpdate()
                     );
 
       allow delete: if isAdmin();
@@ -544,8 +533,7 @@ service cloud.firestore {
     match /typingStatus/{docId} {
       allow read: if isSignedIn();
 
-      allow write: if isVerifiedApp() 
-                   && isActiveUser()
+      allow write: if isActiveUser()
                    && request.auth.uid == docId
                    && isValidTypingStatus();
     }
@@ -559,7 +547,7 @@ service cloud.firestore {
                   (isSignedIn() && request.auth.uid == oduserId);
 
       allow create: if (isAdmin() && isValidBanRecord()) ||
-                    (isVerifiedApp() && isSignedIn() && request.auth.uid == oduserId && isValidSelfBanRecord());
+                    (isSignedIn() && request.auth.uid == oduserId && isValidSelfBanRecord());
 
       allow update: if isAdmin();
 
@@ -576,7 +564,7 @@ service cloud.firestore {
                    exists(/databases/$(database)/documents/user_devices/$(request.auth.uid + '_' + fingerprintId)));
 
       allow create: if (isAdmin() && isValidDeviceBanRecord()) ||
-                    (isVerifiedApp() && isSignedIn() && isValidSelfDeviceBanRecord());
+                    (isSignedIn() && isValidSelfDeviceBanRecord());
 
       allow update: if isAdmin();
 
@@ -594,7 +582,7 @@ service cloud.firestore {
                    ipHashId.size() <= 64);
 
       allow create: if (isAdmin() && isValidIPBanRecord()) ||
-                    (isVerifiedApp() && isSignedIn() && isValidSelfIPBanRecord(ipHashId));
+                    (isSignedIn() && isValidSelfIPBanRecord(ipHashId));
 
       allow update: if isAdmin();
 
@@ -606,20 +594,16 @@ service cloud.firestore {
     // ============================
 
     match /user_devices/{deviceDocId} {
-      allow read: if isVerifiedApp() && (
-                    isAdmin() ||
-                    (isSignedIn() && deviceDocId.matches('^' + request.auth.uid + '_.*'))
-                  );
+      allow read: if isAdmin() ||
+                  (isSignedIn() && deviceDocId.matches('^' + request.auth.uid + '_.*'));
 
-      allow create: if isVerifiedApp() 
-                    && isSignedIn() 
+      allow create: if isSignedIn() 
                     && !isBanned()
                     && isValidDeviceRegistration()
                     && deviceDocId.matches('^' + request.auth.uid + '_.*')
                     && canRegisterDevice();
 
-      allow update: if isVerifiedApp()
-                    && isSignedIn()
+      allow update: if isSignedIn()
                     && !isBanned()
                     && isValidDeviceUpdate()
                     && deviceDocId.matches('^' + request.auth.uid + '_.*');
@@ -658,13 +642,11 @@ service cloud.firestore {
     match /{collection}/{docId} {
       allow read: if isValidCollection(collection) && isSignedIn();
 
-      allow create: if isVerifiedApp()
-                    && isValidCollection(collection)
+      allow create: if isValidCollection(collection)
                     && canSendMessage()
                     && isValidMessageCreate();
 
-      allow update: if isVerifiedApp() 
-                    && isValidCollection(collection)
+      allow update: if isValidCollection(collection)
                     && !isBanned()
                     && (
                       (
