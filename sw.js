@@ -203,8 +203,8 @@ self.addEventListener('push', (event) => {
 
     const options = {
       body: body,
-      icon: '/icon.jpg',
-      badge: '/icon.jpg',
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
       tag: 'konvo-notification',
       renotify: true,
       requireInteraction: false,
