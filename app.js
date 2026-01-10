@@ -1248,8 +1248,8 @@ async function showNotification(title, body) {
       if (reg) {
         await reg.showNotification(safeTitle, {
           body: safeBody,
-          icon: "/favicon.svg",
-          badge: "/favicon.svg",
+          icon: "./favicon.png",
+          badge: "./favicon.png",
           tag: 'konvo-message',
           renotify: true,
           requireInteraction: false
@@ -1257,7 +1257,7 @@ async function showNotification(title, body) {
         return;
       }
     }
-    new Notification(safeTitle, { body: safeBody, icon: "/favicon.svg" });
+    new Notification(safeTitle, { body: safeBody, icon: "./favicon.png" });
   } catch (e) {}
 }
 
